@@ -1,0 +1,4 @@
+# The tests and helper scripts are not the product. Keep them out of GitHub's language bar,
+# so it reflects index.html, the single-file kit.
+tests/** linguist-vendored
+scripts/** linguist-vendored
