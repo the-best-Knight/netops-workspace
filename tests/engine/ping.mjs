@@ -52,4 +52,39 @@ test('numbers with junk suffixes are rejected', () => {
 test('valid rows including 100% loss and zero latency still parse', () => {
   const r = run(mtr([['10.0.0.1', 0], ['10.0.0.2', 100]])); eq(r.hops.length, 2);
 });
+console.log('DR-13 and DR-14 MTU failures are named as MTU problems');
+const winDf = 'Pinging 10.0.0.1 with 1472 bytes of data:\nPacket needs to be fragmented but DF set.\nPacket needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 2, Received = 0, Lost = 2 (100% loss),\n';
+const linuxMtu = 'PING 10.0.0.1 (10.0.0.1) 1472(1500) bytes of data.\nping: local error: message too long, mtu=1400\nping: local error: message too long, mtu=1400\n\n--- 10.0.0.1 ping statistics ---\n2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1002ms\n';
+test('Windows DF failure: MTU named, no claim that the host is down', () => {
+  const r = run(winDf), t = said(r); ok(/MTU/.test(t) && !/may be down/.test(t), t); eq([r.sent, r.received, r.lossPct], [2, 0, 100]);
+});
+test('Linux local MTU error: probes counted, MTU 1400 named', () => {
+  const r = run(linuxMtu), t = said(r); ok(r && /1400/.test(t) && !/No probes were found/.test(t) && !/may be down/.test(t), t); eq([r.sent, r.received, r.lossPct], [2, 0, 100]);
+});
+test('a mix of DF errors and replies is still partial loss with the MTU note', () => {
+  const r = run('Pinging 10.0.0.1 with 1472 bytes of data:\nReply from 10.0.0.1: bytes=1472 time=1ms TTL=64\nPacket needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 2, Received = 1, Lost = 1 (50% loss),\n');
+  ok(/MTU/.test(said(r)), said(r)); eq([r.sent, r.received], [2, 1]);
+});
+test('Windows DF reported by a router names that router', () => {
+  const t = said(run('Pinging 10.0.0.1 with 1472 bytes of data:\nReply from 10.0.0.254: Packet needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),\n'));
+  ok(/10\.0\.0\.254 reported that it needs to fragment/.test(t) && !/may be down/.test(t), t);
+});
+test('Linux remote Frag needed names the router and the MTU', () => {
+  const r = run('PING 10.0.0.1 (10.0.0.1) 1472(1500) bytes of data.\nFrom 10.0.0.254 icmp_seq=1 Frag needed and DF set (mtu = 1400)\nping: local error: message too long, mtu=1400\n\n--- 10.0.0.1 ping statistics ---\n2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1001ms\n'), t = said(r);
+  ok(/10\.0\.0\.254 reported that it needs to fragment \(MTU 1400\)/.test(t) && !/may be down/.test(t), t); eq([r.sent, r.received], [2, 0]);
+});
+test('a local MTU error between replies is counted once', () => {
+  const r = run('PING 10.0.0.1 (10.0.0.1) 56(84) bytes of data.\n64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.4 ms\nping: local error: message too long, mtu=1400\n64 bytes from 10.0.0.1: icmp_seq=3 ttl=64 time=0.4 ms\n\n--- 10.0.0.1 ping statistics ---\n3 packets transmitted, 2 received, +1 errors, 33.3333% packet loss, time 2002ms\n'), t = said(r);
+  eq([r.sent, r.received, r.probes.length], [3, 2, 3]); ok(/Every lost probe was too big/.test(t) && !/does not match|cannot be right/.test(t), t);
+});
+test('MTU loss mixed with timeouts uses plural wording and keeps the timeout', () => {
+  const r = run('Pinging 10.0.0.1 with 1472 bytes of data:\nReply from 10.0.0.1: bytes=1472 time=1ms TTL=64\nRequest timed out.\nPacket needs to be fragmented but DF set.\nPacket needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 4, Received = 1, Lost = 3 (75% loss),\n'), t = said(r);
+  ok(/2 probes were lost because they were too big/.test(t), t); eq([r.sent, r.received], [4, 1]);
+});
+test('IPv6 MTU advice uses 48 bytes of headers', () => {
+  ok(/48 bytes of IPv6/.test(said(run('PING 2001:db8::1(2001:db8::1) 1452 data bytes\nping: local error: message too long, mtu=1400\n\n--- 2001:db8::1 ping statistics ---\n1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms\n'))));
+});
+test('an ordinary total loss still says the target may be down', () => {
+  ok(/may be down/.test(said(run('Pinging 10.0.0.9 with 32 bytes of data:\nRequest timed out.\nRequest timed out.\n\nPing statistics for 10.0.0.9:\n    Packets: Sent = 2, Received = 0, Lost = 2 (100% loss),\n'))));
+});
 done();

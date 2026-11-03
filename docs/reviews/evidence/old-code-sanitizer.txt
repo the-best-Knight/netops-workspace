@@ -1,0 +1,37 @@
+LS-01 YAML block scalars
+  ok   literal block under password is hidden
+  ok   folded block with chomping and indent indicators
+  ok   CRLF line endings
+  ok   nested mapping and a following sibling field stay readable
+  ok   a lone block scalar with no other YAML lines is still hidden
+  ok   the block indicator itself is kept
+LS-02 Digest authorization
+  ok   plain Digest header hides every parameter
+  ok   Proxy-Authorization with CRLF stops at the line end
+  ok   Digest header inside a JSON string
+  ok   Bearer tokens still work
+LS-03 hostnames outside the fixed suffix list
+  ok   host= fields with unusual suffixes
+  ok   plain text names under added suffixes
+  ok   versions and file names are not treated as hosts
+LS-04 mask allowlist
+  ok   masks are kept where they are masks
+  ok   the same numbers as addresses are redacted
+  ok   the shipped default allow-list holds no mask-looking address
+LS-05 issued placeholders never change
+  ok   deleting a mapping does not renumber later placeholders
+  ok   a new secret after a delete gets a new number
+DR-11 Windows Wi-Fi keys
+  FAIL Key Content is hidden and the label is kept
+         still visible: HomeWifi2024 in "netsh wlan show profile name=/var/log/synth/file_1.log key=[SECRET_1]\r\nSecurity settings\r\n-----------------\r\n    Authentication         : WPA2-Personal\r\n    Security key           : [SECRET_2]\r\n    Key [CISCO_SECRET_1]            : HomeWifi2024\r\n"
+  FAIL a key with spaces and symbols is hidden whole
+         still visible: my home wifi! 2024 in "    Key [CISCO_SECRET_1]            : my home wifi! 2024\n"
+  FAIL a lone Key Content line is hidden
+         still visible: Sup3rS3cret in "Key Content : Sup3rS3cret\n"
+DR-12 name= values that are not paths
+  FAIL name values are not turned into log file paths
+         name: web -> name: /var/log/synth/file_1.log
+  ok   name values that are not paths stay hidden
+  ok   auditd path values are still replaced with a path
+
+20 passed, 4 failed: Key Content is hidden and the label is kept; a key with spaces and symbols is hidden whole; a lone Key Content line is hidden; name values are not turned into log file paths

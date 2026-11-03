@@ -1,0 +1,157 @@
+DR-01 one chassis: show inventory agrees with show version
+  FAIL every guided switch, cisco
+         lab 1 SW1: inventory PID WS-C2960-24TT-L is not in show version
+  FAIL every guided switch, dell
+         lab 1 SW1: inventory PID S5248F-ON is not in show version
+DR-02 every Cisco switch port exists on a WS-C2960CX-8TC-L (Gi0/1 to Gi0/12)
+  FAIL no guided lab builds a port the declared switch does not have
+         lab 13 L3-SW1 has Gi0/24
+  ok   ports named in each lab text exist in that lab, for both vendors
+DR-03 show spanning-tree uses the VLAN asked for (Cisco PVST+)
+  FAIL vlan 10 prints VLAN0010 with priority 32768 + 10
+         SW1#show spanning-tree vlan 10
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+  FAIL a VLAN with no active ports lists no ports
+         SW1#show spanning-tree vlan 1
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+  FAIL with two switches exactly one is root, and the other has a root port toward it (found during remediation)
+         switches that call themselves root: got 2 expected 1
+  FAIL root primary on the other switch moves the root there (review finding)
+         Cannot read properties of undefined (reading '0')
+  FAIL a triangle has one root, one blocked port, and a root port on each other switch
+         blocked ports: got 0 expected 1
+  FAIL crossed parallel links: the root port faces the lower sender port ID
+         S2#show spanning-tree vlan 1
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.27b0.a727
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.27b0.a727
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Root FWD 4         128.1    P2p
+Gi0/2               Root FWD 4         128.2    P2p
+DR-04 shut ports and routed ports are not in spanning tree
+  FAIL a shut access port is left out and DWN never appears
+         SW1#show spanning-tree
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+  FAIL the routed port in lab 13 is left out
+         lab 13 has no routed Gi0/8
+DR-05 a Layer 2 port refuses an IP address
+  FAIL Cisco prints the IOS error and keeps the port unchanged
+         SW1(config-if)#ip address 10.9.9.1 255.255.255.0
+  FAIL Dell refuses it too, with a lab note instead of an invented device message
+         SW1(conf-if-eth1/1/2)# ip address 10.9.9.1/24
+  ok   after no switchport, and on a VLAN interface, an address is still accepted
+DR-06 a routed port reports as routed in every command
+  FAIL lab 13 l3a
+         no switchport missing
+  FAIL lab 13 l3b
+         no switchport missing
+  FAIL lab 14 l3sw
+         no switchport missing
+DR-07 show spanning-tree summary has the summary layout
+  FAIL mode, root list, path cost method and the count table
+         SW1#show spanning-tree summary
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+DR-08 show vtp status counts the VLANs show vlan brief lists
+  FAIL lab 1
+         SW1: got 1 expected 6
+  FAIL lab 5
+         SW1: got 2 expected 7
+  FAIL lab 9
+         L3-SW: got 2 expected 7
+DR-09 an unconnected port shows auto speed and duplex
+  FAIL the shut port shows auto auto, the connected port still shows what it negotiated
+         SW1#show interfaces status
+Port      Name               Status       Vlan       Duplex  Speed Type
+Gi0/1                        disabled     10         a-full  a-1000 10/100/1000BaseTX
+Gi0/2                        connected    10         a-full  a-1000 10/100/1000BaseTX
+  ok   lab 7 keeps its negotiated half duplex evidence on the flapping port
+  FAIL a speed set by hand on an unconnected port is shown without the a- prefix
+         SW1#show interfaces status
+Port      Name               Status       Vlan       Duplex  Speed Type
+Gi0/1                        disabled     10         a-full  a-100 10/100/1000BaseTX
+Gi0/2                        connected    10         a-full  a-1000 10/100/1000BaseTX
+DR-10 ip routing can be turned off and on
+  FAIL lab 9: repair, then no ip routing stops inter-VLAN routing and ip routing brings it back
+         no ip routing refused
+End-to-end: the routed-port labs are solved by their own hints, on both vendors
+  ok   lab 13 and lab 14, cisco
+  ok   lab 13 and lab 14, dell
+  FAIL vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco
+         L3-SW1# show ip interface brief
+Interface Name                IP-Address          OK    Method Status     Protocol
+=========================================================================================
+Vlan 10                       10.1.1.1            YES   manual up         up
+Ethernet 1/1/1                unassigned          YES   unset  up         up
+Ethernet 1/1/24               10.1.2.1            YES   manual up         up
+
+5 passed, 24 failed: every guided switch, cisco; every guided switch, dell; no guided lab builds a port the declared switch does not have; vlan 10 prints VLAN0010 with priority 32768 + 10; a VLAN with no active ports lists no ports; with two switches exactly one is root, and the other has a root port toward it (found during remediation); root primary on the other switch moves the root there (review finding); a triangle has one root, one blocked port, and a root port on each other switch; crossed parallel links: the root port faces the lower sender port ID; a shut access port is left out and DWN never appears; the routed port in lab 13 is left out; Cisco prints the IOS error and keeps the port unchanged; Dell refuses it too, with a lab note instead of an invented device message; lab 13 l3a; lab 13 l3b; lab 14 l3sw; mode, root list, path cost method and the count table; lab 1; lab 5; lab 9; the shut port shows auto auto, the connected port still shows what it negotiated; a speed set by hand on an unconnected port is shown without the a- prefix; lab 9: repair, then no ip routing stops inter-VLAN routing and ip routing brings it back; vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco

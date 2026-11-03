@@ -1,0 +1,33 @@
+LS-01 YAML block scalars
+  ok   literal block under password is hidden
+  ok   folded block with chomping and indent indicators
+  ok   CRLF line endings
+  ok   nested mapping and a following sibling field stay readable
+  ok   a lone block scalar with no other YAML lines is still hidden
+  ok   the block indicator itself is kept
+LS-02 Digest authorization
+  ok   plain Digest header hides every parameter
+  ok   Proxy-Authorization with CRLF stops at the line end
+  ok   Digest header inside a JSON string
+  ok   Bearer tokens still work
+LS-03 hostnames outside the fixed suffix list
+  ok   host= fields with unusual suffixes
+  ok   plain text names under added suffixes
+  ok   versions and file names are not treated as hosts
+LS-04 mask allowlist
+  ok   masks are kept where they are masks
+  ok   the same numbers as addresses are redacted
+  ok   the shipped default allow-list holds no mask-looking address
+LS-05 issued placeholders never change
+  ok   deleting a mapping does not renumber later placeholders
+  ok   a new secret after a delete gets a new number
+DR-11 Windows Wi-Fi keys
+  ok   Key Content is hidden and the label is kept
+  ok   a key with spaces and symbols is hidden whole
+  ok   a lone Key Content line is hidden
+DR-12 name= values that are not paths
+  ok   name values are not turned into log file paths
+  ok   name values that are not paths stay hidden
+  ok   auditd path values are still replaced with a path
+
+24 passed, 0 failed

@@ -1,0 +1,40 @@
+PA-01 probe results are not application results
+  ok   zero final-hop loss does not certify the path for other traffic
+  ok   loss only at a middle hop is described as slow replies, with the caveat
+  ok   the bundled pathping and mtr examples never say a real connection sees the same
+  ok   final-hop loss mentions ICMP rate limiting as a possibility
+PA-02 loss origin is a suspect area, judged by size
+  ok   90% at hop 2 with 1% after it is not called the drop point
+  ok   1%, 20%, 20% still points at the persistent loss and says it is a suspect area
+  ok   loss that continues at a similar level is reported as starting at that hop
+  ok   silent hops after the first lossy hop are not treated as proof
+  ok   unequal probe counts are called out
+PA-03 malformed metrics
+  ok   negative loss, latency and probe counts are not accepted as hops
+  ok   numbers with junk suffixes are rejected
+  ok   valid rows including 100% loss and zero latency still parse
+DR-13 and DR-14 MTU failures are named as MTU problems
+  FAIL Windows DF failure: MTU named, no claim that the host is down
+         None of the 2 probes were answered. The target may be down or unreachable, or something along the path may be blocking ICMP. A successful ping is proof of reachability; a failed one is only a hint, so test the service itself (for example Test-NetConnection host -Port 443) as well.
+  FAIL Linux local MTU error: probes counted, MTU 1400 named
+         No probes were found in this output.
+  FAIL a mix of DF errors and replies is still partial loss with the MTU note
+         1 of 2 probes (50%) got no reply. Only 1 probes are in the pasted text, so the figure comes from the summary line.
+Round trip: lowest 1 ms, average 1 ms, highest 1 ms.
+The summary line says 2 probes but only 1 appear in the pasted text.
+  FAIL Windows DF reported by a router names that router
+         All 1 probes were answered.
+  FAIL Linux remote Frag needed names the router and the MTU
+         No probes were found in this output.
+  FAIL a local MTU error between replies is counted once
+         not equal: got [1,1,1] expected [3,2,3]
+  FAIL MTU loss mixed with timeouts uses plural wording and keeps the timeout
+         3 of 4 probes (75%) got no reply. Only 2 probes are in the pasted text, so the figure comes from the summary line.
+The missing replies are scattered, not in one run. That fits congestion, rate-limiting of ICMP, or a flaky link.
+Round trip: lowest 1 ms, average 1 ms, highest 1 ms.
+The summary line says 4 probes but only 2 appear in the pasted text.
+  FAIL IPv6 MTU advice uses 48 bytes of headers
+         assertion failed
+  ok   an ordinary total loss still says the target may be down
+
+13 passed, 8 failed: Windows DF failure: MTU named, no claim that the host is down; Linux local MTU error: probes counted, MTU 1400 named; a mix of DF errors and replies is still partial loss with the MTU note; Windows DF reported by a router names that router; Linux remote Frag needed names the router and the MTU; a local MTU error between replies is counted once; MTU loss mixed with timeouts uses plural wording and keeps the timeout; IPv6 MTU advice uses 48 bytes of headers

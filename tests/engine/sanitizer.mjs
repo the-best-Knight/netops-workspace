@@ -52,4 +52,18 @@ test('a new secret after a delete gets a new number', () => {
   const fresh = [...s.map.values()].map((m) => m.replacement);
   ok(!fresh.includes(old), 'deleted placeholder number was reused: ' + fresh);
 });
+console.log('DR-11 Windows Wi-Fi keys');
+const wlan = 'netsh wlan show profile name=Home key=clear\r\nSecurity settings\r\n-----------------\r\n    Authentication         : WPA2-Personal\r\n    Security key           : Present\r\n    Key Content            : HomeWifi2024\r\n';
+test('Key Content is hidden and the label is kept', () => { const r = noLeak(wlan, ['HomeWifi2024']); ok(/Key Content {12}: \[SECRET_\d+\]\r\n/.test(r.out), r.out); });
+test('a key with spaces and symbols is hidden whole', () => noLeak('    Key Content            : my home wifi! 2024\n', ['my home wifi! 2024', 'home wifi']));
+test('a lone Key Content line is hidden', () => noLeak('Key Content : Sup3rS3cret\n', ['Sup3rS3cret']));
+
+console.log('DR-12 name= values that are not paths');
+test('name values are not turned into log file paths', () => {
+  for (const t of ['name: web', 'name=Home', 'profile name=Office key=clear', '  - name: nginx']) ok(!clean(t).out.includes('/var/log/'), t + ' -> ' + clean(t).out);
+});
+test('name values that are not paths stay hidden', () => { noLeak('netsh wlan show profile name=Office key=clear', ['Office']); noLeak('name=Home\n', ['Home']); });
+test('auditd path values are still replaced with a path', () => {
+  const r = noLeak('type=PATH msg=audit(1700000000.123:42): item=0 name="/home/alice/secret.txt" inode=1', ['alice']); ok(/name="\/home\//.test(r.out), r.out);
+});
 done();

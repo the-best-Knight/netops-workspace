@@ -1,0 +1,42 @@
+DR-01 one chassis: show inventory agrees with show version
+  ok   every guided switch, cisco
+  ok   every guided switch, dell
+DR-02 every Cisco switch port exists on a WS-C2960CX-8TC-L (Gi0/1 to Gi0/12)
+  ok   no guided lab builds a port the declared switch does not have
+  ok   ports named in each lab text exist in that lab, for both vendors
+DR-03 show spanning-tree uses the VLAN asked for (Cisco PVST+)
+  ok   vlan 10 prints VLAN0010 with priority 32768 + 10
+  ok   a VLAN with no active ports lists no ports
+  ok   with two switches exactly one is root, and the other has a root port toward it (found during remediation)
+  ok   root primary on the other switch moves the root there (review finding)
+  ok   a triangle has one root, one blocked port, and a root port on each other switch
+  ok   crossed parallel links: the root port faces the lower sender port ID
+DR-04 shut ports and routed ports are not in spanning tree
+  ok   a shut access port is left out and DWN never appears
+  ok   the routed port in lab 13 is left out
+DR-05 a Layer 2 port refuses an IP address
+  ok   Cisco prints the IOS error and keeps the port unchanged
+  ok   Dell refuses it too, with a lab note instead of an invented device message
+  ok   after no switchport, and on a VLAN interface, an address is still accepted
+DR-06 a routed port reports as routed in every command
+  ok   lab 13 l3a
+  ok   lab 13 l3b
+  ok   lab 14 l3sw
+DR-07 show spanning-tree summary has the summary layout
+  ok   mode, root list, path cost method and the count table
+DR-08 show vtp status counts the VLANs show vlan brief lists
+  ok   lab 1
+  ok   lab 5
+  ok   lab 9
+DR-09 an unconnected port shows auto speed and duplex
+  ok   the shut port shows auto auto, the connected port still shows what it negotiated
+  ok   lab 7 keeps its negotiated half duplex evidence on the flapping port
+  ok   a speed set by hand on an unconnected port is shown without the a- prefix
+DR-10 ip routing can be turned off and on
+  ok   lab 9: repair, then no ip routing stops inter-VLAN routing and ip routing brings it back
+End-to-end: the routed-port labs are solved by their own hints, on both vendors
+  ok   lab 13 and lab 14, cisco
+  ok   lab 13 and lab 14, dell
+  ok   vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco
+
+29 passed, 0 failed

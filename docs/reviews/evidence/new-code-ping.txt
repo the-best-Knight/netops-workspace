@@ -1,0 +1,27 @@
+PA-01 probe results are not application results
+  ok   zero final-hop loss does not certify the path for other traffic
+  ok   loss only at a middle hop is described as slow replies, with the caveat
+  ok   the bundled pathping and mtr examples never say a real connection sees the same
+  ok   final-hop loss mentions ICMP rate limiting as a possibility
+PA-02 loss origin is a suspect area, judged by size
+  ok   90% at hop 2 with 1% after it is not called the drop point
+  ok   1%, 20%, 20% still points at the persistent loss and says it is a suspect area
+  ok   loss that continues at a similar level is reported as starting at that hop
+  ok   silent hops after the first lossy hop are not treated as proof
+  ok   unequal probe counts are called out
+PA-03 malformed metrics
+  ok   negative loss, latency and probe counts are not accepted as hops
+  ok   numbers with junk suffixes are rejected
+  ok   valid rows including 100% loss and zero latency still parse
+DR-13 and DR-14 MTU failures are named as MTU problems
+  ok   Windows DF failure: MTU named, no claim that the host is down
+  ok   Linux local MTU error: probes counted, MTU 1400 named
+  ok   a mix of DF errors and replies is still partial loss with the MTU note
+  ok   Windows DF reported by a router names that router
+  ok   Linux remote Frag needed names the router and the MTU
+  ok   a local MTU error between replies is counted once
+  ok   MTU loss mixed with timeouts uses plural wording and keeps the timeout
+  ok   IPv6 MTU advice uses 48 bytes of headers
+  ok   an ordinary total loss still says the target may be down
+
+21 passed, 0 failed

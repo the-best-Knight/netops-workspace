@@ -18,21 +18,22 @@ node tests/engine/fuzz.mjs 800   # 800 batches of damaged and mixed-up device ou
 ```
 
 ```sh
-for t in sanitizer configdiff calculator routing switching vsphere dns ping lessons content; do node tests/engine/$t.mjs; done
+for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content; do node tests/engine/$t.mjs; done
 ```
 
 These run the other tools' own code, taken from `index.html` with no browser: `tests/engine/tool.mjs` cuts a tool's script out, runs it against a stub page, and hands back the functions a test asks for (`__set` and `__get` reach its other variables). Each file is named for its tool and its checks carry the finding ID of the technical review they came from.
 
 | File | What it covers |
 | --- | --- |
-| `sanitizer` | YAML block scalars, Digest headers, hostnames, mask versus address, placeholders that never change |
+| `sanitizer` | YAML block scalars, Digest headers, hostnames, mask versus address, placeholders that never change, Windows Wi-Fi keys, `name=` values that are not paths |
 | `configdiff` | Reordered rules are never "unchanged", quote-aware whitespace |
 | `calculator` | The generated ACL, iptables and nftables text, checked by running it |
 | `routing` | Administrative distance 255 |
 | `switching` | Spanning-tree cost and tie-breaks, `root secondary`, rejected commands, the console path, native VLAN, ACL grammar |
+| `switchlab` | Every guided lesson on Cisco and Dell: `show inventory` against `show version`, port names against the WS-C2960CX-8TC-L, per-VLAN spanning tree and its summary, IP addresses on Layer 2 ports, routed ports, `show vtp status`, `show interfaces status`, `ip routing`, and lessons 13 and 14 solved by their own hints |
 | `vsphere` | Hot add, snapshot space, host reboot, VMware Tools |
 | `dns` | CNAME with `ANY`, SRV with a root target |
-| `ping` | mtr wording, loss placement, damaged numbers |
+| `ping` | mtr wording, loss placement, damaged numbers, Windows and Linux MTU failures |
 | `lessons` | The access list lesson is fixed by correcting the rule |
 | `content` | Wording claims in the README and the reference data |
 
