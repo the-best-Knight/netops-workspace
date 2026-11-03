@@ -3,7 +3,7 @@ $ node scripts/check-scripts.mjs
 $ node tests/engine/suite.mjs
 73 passed, 0 failed
 $ node tests/engine/sanitizer.mjs
-24 passed, 0 failed
+31 passed, 0 failed
 $ node tests/engine/configdiff.mjs
 9 passed, 0 failed
 $ node tests/engine/calculator.mjs
@@ -13,16 +13,18 @@ $ node tests/engine/routing.mjs
 $ node tests/engine/switching.mjs
 23 passed, 0 failed
 $ node tests/engine/switchlab.mjs
-29 passed, 0 failed
+41 passed, 0 failed
 $ node tests/engine/vsphere.mjs
 8 passed, 0 failed
 $ node tests/engine/dns.mjs
 11 passed, 0 failed
 $ node tests/engine/ping.mjs
-21 passed, 0 failed
+23 passed, 0 failed
 $ node tests/engine/lessons.mjs
 6 passed, 0 failed
 $ node tests/engine/content.mjs
 6 passed, 0 failed
 $ node tests/engine/fuzz.mjs 400
-fuzz 400 batches, 56 devices, 0 exceptions, 0 slow batches, 1338 ms total; Object.prototype clean: true
+fuzz 400 batches, 56 devices, 0 exceptions, 0 slow batches, 1336 ms total; Object.prototype clean: true
+$ node tests/engine/fuzz.mjs 800
+fuzz 800 batches, 78 devices, 0 exceptions, 0 slow batches, 3189 ms total; Object.prototype clean: true

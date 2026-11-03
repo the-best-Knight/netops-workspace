@@ -1,15 +1,15 @@
 # IT Skills Kit remediation, 3 November 2026
 
-This pass fixes the 14 defects in [2026-11-03-deep-review.md](2026-11-03-deep-review.md), starting from commit `9057683`. It adds no features and changes no UI layout. Nothing is committed yet.
+This pass fixes the 14 defects in [2026-11-03-deep-review.md](2026-11-03-deep-review.md), starting from commit `9057683`. It adds no features and changes no UI layout. Sections 1 to 9 describe the first commit on this branch (`a4cd402`). Section 10 covers the follow-up after an independent review of that commit (IR-01 to IR-04), and its numbers replace the test counts in section 8.
 
 ## Summary
 
 | Status | Items |
 |---|---|
-| Fixed and verified | DR-01 to DR-14, plus N-01 (found during this pass) and R-01 to R-05 (found by the independent review) |
+| Fixed and verified | DR-01 to DR-14, plus N-01 (found during this pass), R-01 to R-05 (found by the first independent review), and IR-01 to IR-04 and R-06 (found by the second review and by its tests) |
 | Fixed only for Cisco, Dell left as it was | DR-03, DR-04, DR-07 (the Dell spanning-tree view) |
 | Unresolved, kept separate | SC-01 to SC-06 |
-| Found during this pass, not fixed | N-02, N-03, N-04 |
+| Found during this pass, not fixed | N-02, N-03 (N-04 is fixed as IR-04) |
 | Intentionally unsupported | Dynamic routing, OS10 RPVST+ output, real vMotion checks, CDP on hosts |
 
 ## 1. Findings, resolutions, evidence and tests
@@ -87,7 +87,7 @@ This pass fixes the 14 defects in [2026-11-03-deep-review.md](2026-11-03-deep-re
 ## 5. Found during this pass, not fixed
 
 - **N-02:** On a routed port, `switchport mode access` sets the mode but leaves the port flagged routed. IOS needs a bare `switchport` first, and the lab does not accept a bare `switchport`. This already existed before this pass. I left it because the right IOS response needs a source.
-- **N-04:** A quoted name with spaces (`name="My Home WiFi"`) is not hidden, before or after this pass. It shows up in `netsh` output, so it is worth a follow-up.
+- **N-04 (fixed later as IR-04, section 10):** A quoted name with spaces (`name="My Home WiFi"`) is not hidden, before or after this pass. It shows up in `netsh` output, so it is worth a follow-up.
 - **N-03:** On a connected port with a speed set by hand, `show interfaces status` still prints `a-100`. IOS prints `100` without the prefix when the speed is fixed. I left connected rows unchanged to protect lab 7.
 
 ## 6. Intentionally unsupported (simulation limits)
@@ -150,7 +150,7 @@ $ KIT_FILE=<copy of index.html at 9057683> node tests/engine/sanitizer.mjs   -> 
 $ KIT_FILE=<copy of index.html at 9057683> node tests/engine/ping.mjs        -> 13 passed, 8 failed
 ```
 
-**Not run:** the Firefox browser suites in `tests/browser`, because Firefox is not installed here.
+**Correction:** I first wrote that Firefox was not installed. It is (`/Applications/Firefox.app`); I had not tried it. The browser suites were run in the follow-up, see section 10.
 
 ## 9. Independent review
 
@@ -174,3 +174,77 @@ A separate reviewer with no access to this session's reasoning read the diff and
 - **Device claims it flagged:** The L2 error text comes from community threads, and routed ports and `ip routing` without the SDM step on a LAN Base 2960-CX are not backed by any cited source. Both are disclosed in sections 3 and 4 and stay open as SC-01 and SC-02.
 
 After the review fixes, the old-versus-new lab, incident, fixture and leak comparisons in section 2 were rerun with the same results.
+
+## 10. Follow-up: review of `a4cd402` (IR-01 to IR-04)
+
+An independent reviewer reproduced four problems on the first commit. Each is reproduced below, covered by a test that fails on `a4cd402`, and fixed at the cause. I also found one defect in my own earlier fix (R-06) while writing the tests.
+
+### Incomplete fixes from the first commit
+
+| ID | What was wrong | Cause | Fix | Test that fails on `a4cd402` |
+|---|---|---|---|---|
+| IR-01 | After SW1 `root primary`, SW2 `root primary` did nothing, and a switch's priority changed when a peer changed | The command saved a marker (`d.stpRoot`) and `stpBridge` worked the priority out later from the peers' *base* priorities | The command works out the priority when it runs and stores it in `d.stpPrio[vlan]`, the same field the incident engine and the election already read. `stpRoot` is gone. Both modes call one function, `rootMacroPrio`. `show running-config` prints `spanning-tree vlan N priority P`, so save and reload carry it. A list of VLANs works, a VLAN that does not exist is refused, and a root already at 0 gives a lab note and changes nothing | 6 tests: SW2 beats SW1; priority stable when a peer changes or the link goes down; VLAN 20 leaves VLAN 10 alone; running-config, output and reload agree; nonexistent VLAN; priority 0 |
+| IR-02 | `show spanning-tree vlan 2000` said the instance does not exist | The VLAN list was filtered with `v < 1002`, which dropped every extended VLAN | Only 1002 to 1005 are left out | VLANs 1006, 2000, 4094 (detail, root, summary row), 1002 to 1005 stay out, summary counts add up. VLAN 1001 passed before and is kept as a guard |
+| IR-03 | A Windows router reply `Packet needs to be fragmented but DF set.` raised "summary and probes do not agree" and "got no reply" | `finishPing` counted router error replies as received only for unreachable and TTL expired, not for the new MTU category | The router MTU reply joins that reconciliation, with the explanation naming it. The loss line says "got no echo reply from the target" when the only loss is MTU errors | The fixture test now inspects every observation and rejects six kinds of contradictory text, and requires the router, "no echo reply from the target" and the explanation. Two more tests: a mix with one good reply, and a summary that really disagrees is still flagged |
+| IR-04 | `name="My Home WiFi"` and `Name : My Home WiFi` leaked (disclosed earlier as N-04) | The name rule took one word and refused quotes | `namefield` takes quoted values with spaces. A new rule, `namefree`, takes the rest of a `name:` line, and an unquoted netsh profile name up to `key=`, `interface=` or `folder=`. Real paths still go to `auditpath` | 5 tests: double and single quotes, CRLF, two names on a line, unquoted netsh, `Name :` lines, `{name: web, port: 80}` keeps `port: 80`, empty values, real paths, round trips |
+
+**Not changed on purpose:** for `name=` without quotes outside a netsh command (for example `name=My Home`), only the first word is taken, because without quotes the end of the value is not known. Dell's guided `root` command is accepted with a lab note and changes nothing, because the Dell guided view shows one instance (SC-03).
+
+### Found while testing
+
+| ID | Defect | Cause | Fix | Test |
+|---|---|---|---|---|
+| R-06 | My `auditpath` change in `a4cd402` was quadratic. A line of `name:` followed by 50,000 spaces took 738 ms (original code: a few ms) | Variable-length lookbehinds rescanned the spaces at every position | Replaced with a forward-only check. The new rules use no variable-length lookbehind and match word by word. The same input now takes 10 ms | "long lines of spaces after name: do not stall" fails on `a4cd402` (2.4 s) and passes now |
+
+### Mutation check
+
+| Test file | Original `9057683` | Previous head `a4cd402` | Now |
+|---|---|---|---|
+| `switchlab.mjs` (41 tests) | 5 pass, 36 fail | 31 pass, 10 fail | 41 pass |
+| `sanitizer.mjs` (31 tests) | 23 pass, 8 fail | 26 pass, 5 fail | 31 pass |
+| `ping.mjs` (23 tests) | 14 pass, 9 fail | 21 pass, 2 fail | 23 pass |
+
+The 17 failures on `a4cd402` are the IR-01 to IR-04 and R-06 tests above, so each finding is detected by a test. Raw output is in `evidence/prev-head-*.txt`, `evidence/old-code-*.txt` and `evidence/new-code-*.txt`.
+
+### Regression checks after the follow-up
+
+| Check | Result |
+|---|---|
+| All 18 lessons × 2 vendors × every switch, router and L3 switch: start-state `check()` and the full reachability matrix, against the original and against `a4cd402` | 0 differences |
+| 6 incident networks, 562 host-to-address pairs, against the original | 0 differences |
+| 19 real sanitizer fixtures, `a4cd402` against now | 0 changed lines |
+| Sanitizer leak corpus (40 secret-bearing lines) | 39 hidden, 0 round-trip failures. The one visible line is the unverified Junos form |
+| Real page, sanitizer: `name="My Home WiFi"`, `name=Cafe Guest key=clear`, `Name : My Home WiFi`, an auditd path | Nothing leaked, the path is still a path, and the residual scan said "Verification passed" on each |
+| Real page, Switch Lab (Cisco, lesson 6): SW1 then SW2 `root primary` | SW2 root at 20490, SW1 root port Gi0/2, running-config shows `spanning-tree vlan 10 priority 20480`. No console errors |
+
+### Exact commands and results (Node v26.12.0)
+
+```
+$ node scripts/check-scripts.mjs        18 scripts checked, 0 failed.
+$ node tests/engine/suite.mjs           73 passed, 0 failed
+$ node tests/engine/sanitizer.mjs       31 passed, 0 failed
+$ node tests/engine/configdiff.mjs       9 passed, 0 failed
+$ node tests/engine/calculator.mjs       5 passed, 0 failed
+$ node tests/engine/routing.mjs          4 passed, 0 failed
+$ node tests/engine/switching.mjs       23 passed, 0 failed
+$ node tests/engine/switchlab.mjs       41 passed, 0 failed
+$ node tests/engine/vsphere.mjs          8 passed, 0 failed
+$ node tests/engine/dns.mjs             11 passed, 0 failed
+$ node tests/engine/ping.mjs            23 passed, 0 failed
+$ node tests/engine/lessons.mjs          6 passed, 0 failed
+$ node tests/engine/content.mjs          6 passed, 0 failed
+$ node tests/engine/fuzz.mjs 400        400 batches, 56 devices, 0 exceptions, 0 slow batches; Object.prototype clean: true
+$ node tests/engine/fuzz.mjs 800        800 batches, 78 devices, 0 exceptions, 0 slow batches; Object.prototype clean: true
+$ git diff --check                      no output
+```
+
+**Runner total:** the twelve runners above (suite plus the eleven tool runners) report **240 passed, 0 failed**. That is the sum of their own "passed" lines. It does not count the fuzz batches or the browser tests.
+
+**Browser suites (Firefox, headless):** `sh tests/run.sh` ran all 23 files in `tests/browser` against this branch: **23/23 files passed, 510/510 checks passed**, and the run exited 0. This covers the hub, branding, light and dark UI standards, the Switch Lab (`fault-lab`, `fault-lab-free`), the Ping Analyzer, the calculator and every Topology Builder suite. The output is in `evidence/browser-run.txt`. I did not run them against `a4cd402` or the original, so there is no before and after for them. The Ping Analyzer suite's two expected phrases that I changed in the earlier pass ("Loss first appears at hop 4") pass.
+
+### Still open
+
+- **Hardware questions stay unresolved.** SC-01 (routed ports on the WS-C2960CX-8TC-L) and SC-02 (the SDM template step) are not settled. The reviewer pointed to Cisco's 15.2(7)Ex routing and SDM chapters for the 2960-CX and 3560-CX family. I have not read them in this pass, and those chapters mix models, so nothing here is claimed about that image.
+- **Not modeled:** a limit on spanning-tree instances. Real switches cap the count. The lab accepts any VLAN it accepts elsewhere, and the summary lists them all.
+- **Still open from section 5:** N-02, N-03. N-04 is now fixed (IR-04).
+- **Dell guided `root` command:** accepted with a lab note, no state (SC-03).

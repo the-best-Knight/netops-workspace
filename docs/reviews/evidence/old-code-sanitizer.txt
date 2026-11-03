@@ -33,5 +33,17 @@ DR-12 name= values that are not paths
          name: web -> name: /var/log/synth/file_1.log
   ok   name values that are not paths stay hidden
   ok   auditd path values are still replaced with a path
+IR-04 profile names with spaces and quotes
+  FAIL a double-quoted name with spaces is hidden whole, and the restore round-trips
+         still visible: My Home WiFi in "netsh wlan show profile name=\"My Home WiFi\" key=[SECRET_1]"
+  FAIL single quotes, CRLF and a second quoted value on the line
+         still visible: Guest Net 5G in "netsh wlan show profile name='Guest Net 5G' key=[SECRET_1]\r\n"
+  FAIL an unquoted netsh profile name with spaces stops before key= and interface=
+         still visible: Home WiFi in "netsh wlan show profile name=/var/log/synth/file_1.log Home WiFi key=[SECRET_1]"
+  FAIL a name: line keeps only the rest of that line, up to a comma
+         still visible: Home WiFi in "    Name                   : /var/log/synth/file_1.log Home WiFi\r\n"
+  ok   empty values are left alone
+  ok   real paths in quotes are still paths
+  ok   long lines of spaces after name: do not stall
 
-20 passed, 4 failed: Key Content is hidden and the label is kept; a key with spaces and symbols is hidden whole; a lone Key Content line is hidden; name values are not turned into log file paths
+23 passed, 8 failed: Key Content is hidden and the label is kept; a key with spaces and symbols is hidden whole; a lone Key Content line is hidden; name values are not turned into log file paths; a double-quoted name with spaces is hidden whole, and the restore round-trips; single quotes, CRLF and a second quoted value on the line; an unquoted netsh profile name with spaces stops before key= and interface=; a name: line keeps only the rest of that line, up to a comma

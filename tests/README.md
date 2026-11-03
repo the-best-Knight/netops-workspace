@@ -25,15 +25,15 @@ These run the other tools' own code, taken from `index.html` with no browser: `t
 
 | File | What it covers |
 | --- | --- |
-| `sanitizer` | YAML block scalars, Digest headers, hostnames, mask versus address, placeholders that never change, Windows Wi-Fi keys, `name=` values that are not paths |
+| `sanitizer` | YAML block scalars, Digest headers, hostnames, mask versus address, placeholders that never change, Windows Wi-Fi keys, `name=` values that are not paths, quoted and multiword profile names, linear time on long runs of spaces |
 | `configdiff` | Reordered rules are never "unchanged", quote-aware whitespace |
 | `calculator` | The generated ACL, iptables and nftables text, checked by running it |
 | `routing` | Administrative distance 255 |
 | `switching` | Spanning-tree cost and tie-breaks, `root secondary`, rejected commands, the console path, native VLAN, ACL grammar |
-| `switchlab` | Every guided lesson on Cisco and Dell: `show inventory` against `show version`, port names against the WS-C2960CX-8TC-L, per-VLAN spanning tree and its summary, IP addresses on Layer 2 ports, routed ports, `show vtp status`, `show interfaces status`, `ip routing`, and lessons 13 and 14 solved by their own hints |
+| `switchlab` | Every guided lesson on Cisco and Dell: `show inventory` against `show version`, port names against the WS-C2960CX-8TC-L, per-VLAN spanning tree and its summary (including VLANs above 1005), `root primary|secondary` stored per VLAN and kept across running-config and reload, IP addresses on Layer 2 ports, routed ports, `show vtp status`, `show interfaces status`, `ip routing`, and lessons 13 and 14 solved by their own hints |
 | `vsphere` | Hot add, snapshot space, host reboot, VMware Tools |
 | `dns` | CNAME with `ANY`, SRV with a root target |
-| `ping` | mtr wording, loss placement, damaged numbers, Windows and Linux MTU failures |
+| `ping` | mtr wording, loss placement, damaged numbers, Windows and Linux MTU failures, router error replies, no contradictory warnings |
 | `lessons` | The access list lesson is fixed by correcting the rule |
 | `content` | Wording claims in the README and the reference data |
 

@@ -1,0 +1,37 @@
+PA-01 probe results are not application results
+  ok   zero final-hop loss does not certify the path for other traffic
+  ok   loss only at a middle hop is described as slow replies, with the caveat
+  ok   the bundled pathping and mtr examples never say a real connection sees the same
+  ok   final-hop loss mentions ICMP rate limiting as a possibility
+PA-02 loss origin is a suspect area, judged by size
+  ok   90% at hop 2 with 1% after it is not called the drop point
+  ok   1%, 20%, 20% still points at the persistent loss and says it is a suspect area
+  ok   loss that continues at a similar level is reported as starting at that hop
+  ok   silent hops after the first lossy hop are not treated as proof
+  ok   unequal probe counts are called out
+PA-03 malformed metrics
+  ok   negative loss, latency and probe counts are not accepted as hops
+  ok   numbers with junk suffixes are rejected
+  ok   valid rows including 100% loss and zero latency still parse
+DR-13 and DR-14 MTU failures are named as MTU problems
+  ok   Windows DF failure: MTU named, no claim that the host is down
+  ok   Linux local MTU error: probes counted, MTU 1400 named
+  ok   a mix of DF errors and replies is still partial loss with the MTU note
+  FAIL Windows DF reported by a router: one clear story and no contradictory warning
+         no statement that the target sent no echo
+The summary line says 1 sent and 1 received, but the pasted text has 1 probes and 0 were answered. The two do not agree, so the figures here count the pasted probes. Check that the summary belongs to the same run.
+Every lost probe was too big for the path MTU with Don’t Fragment set: 10.0.0.254 reported that it needs to fragment. This is a packet size problem, not a sign that the target is down. Lower the size until a probe gets through; the largest size that works plus 28 bytes of IPv4 and ICMP headers is the path MTU.
+1 of 1 probes (100%) got no reply.
+  FAIL DF errors mixed with one good reply: partial loss, worded as no echo reply
+         The summary line says 2 sent and 2 received, but the pasted text has 2 probes and 1 were answered. The two do not agree, so the figures here count the pasted probes. Check that the summary belongs to the same run.
+Every lost probe was too big for the path MTU with Don’t Fragment set: 10.0.0.254 reported that it needs to fragment. This is a packet size problem, not a sign that the target is down. Lower the size until a probe gets through; the largest size that works plus 28 bytes of IPv4 and ICMP headers is the path MTU.
+1 of 2 probes (50%) got no reply.
+Round trip: lowest 1 ms, average 1 ms, highest 1 ms.
+  ok   a summary that really disagrees with the pasted probes is still flagged
+  ok   Linux remote Frag needed names the router and the MTU
+  ok   a local MTU error between replies is counted once
+  ok   MTU loss mixed with timeouts uses plural wording and keeps the timeout
+  ok   IPv6 MTU advice uses 48 bytes of headers
+  ok   an ordinary total loss still says the target may be down
+
+21 passed, 2 failed: Windows DF reported by a router: one clear story and no contradictory warning; DF errors mixed with one good reply: partial loss, worded as no echo reply

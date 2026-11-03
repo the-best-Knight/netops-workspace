@@ -1,0 +1,166 @@
+DR-01 one chassis: show inventory agrees with show version
+  ok   every guided switch, cisco
+  ok   every guided switch, dell
+DR-02 every Cisco switch port exists on a WS-C2960CX-8TC-L (Gi0/1 to Gi0/12)
+  ok   no guided lab builds a port the declared switch does not have
+  ok   ports named in each lab text exist in that lab, for both vendors
+DR-03 show spanning-tree uses the VLAN asked for (Cisco PVST+)
+  ok   vlan 10 prints VLAN0010 with priority 32768 + 10
+  ok   a VLAN with no active ports lists no ports
+  ok   with two switches exactly one is root, and the other has a root port toward it (found during remediation)
+IR-01 root macros store one priority per VLAN
+  FAIL SW1 primary, then SW2 primary: SW2 beats SW1 and the order of the commands decides
+         SW1#show spanning-tree vlan 10
+VLAN0010
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    24586
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    24586  (priority 24576 sys-id-ext 10)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg FWD 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2pSW2#show spanning-tree vlan 10
+VLAN0010
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    24586
+             Address     0050.379e.7337
+             Cost        4
+             Port        2 (GigabitEthernet0/2)
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    24586  (priority 24576 sys-id-ext 10)
+             Address     0050.a101.41a1
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/2               Root FWD 4         128.2    P2p
+  FAIL the stored priority does not move when a peer changes or the link goes down
+         Cannot read properties of undefined (reading '10')
+  FAIL a command for VLAN 20 leaves the VLAN 10 priority alone, and several VLANs in one command work
+         Cannot read properties of undefined (reading '10')
+  FAIL running-config, save and reload, and spanning-tree output agree
+         SW1#show running-config
+Building configuration...
+
+Current configuration : 665 bytes
+!
+version 15.2
+no service pad
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname SW1
+!
+boot-start-marker
+boot-end-marker
+!
+no aaa new-model
+!
+spanning-tree mode pvst
+spanning-tree extend system-id
+!
+vlan 10
+ name USERS
+!
+vlan 20
+ name SALES
+!
+vlan internal allocation policy ascending
+!
+interface GigabitEthernet0/1
+ switchport mode access
+ switchport access vlan 10
+!
+interface GigabitEthernet0/2
+ switchport mode trunk
+ switchport trunk allowed vlan 10
+!
+interface GigabitEthernet0/3
+ switchport mode access
+ switchport access vlan 20
+!
+!
+line con 0
+line vty 0 4
+ login
+line vty 5 15
+ login
+!
+end
+  ok   an unsaved change is lost on reload, like the rest of the config
+  FAIL a VLAN that does not exist on the switch is refused, and root secondary needs no lower root
+         SW1(config)#spanning-tree vlan 99 root primary
+  FAIL the macro cannot go below 0: the lab says so and keeps the old priority
+         SW1(config)#spanning-tree vlan 10 root primary
+IR-02 extended VLANs have spanning-tree instances; only 1002 to 1005 are left out
+  ok   VLAN 1001: detail, root, and summary row
+  FAIL VLAN 1006: detail, root, and summary row
+         SW1#show spanning-tree vlan 1006
+Spanning tree instance(s) for vlan 1006 does not exist.
+  FAIL VLAN 2000: detail, root, and summary row
+         SW1#show spanning-tree vlan 2000
+Spanning tree instance(s) for vlan 2000 does not exist.
+  FAIL VLAN 4094: detail, root, and summary row
+         SW1#show spanning-tree vlan 4094
+Spanning tree instance(s) for vlan 4094 does not exist.
+  ok   the reserved VLANs 1002 to 1005 never get an instance
+  FAIL summary counts add up with extended VLANs present
+         SW1#show spanning-tree summary
+Switch is in pvst mode
+Root bridge for: VLAN0010
+Extended system ID                      is enabled
+Portfast Default                        is disabled
+PortFast BPDU Guard Default             is disabled
+Portfast BPDU Filter Default            is disabled
+Loopguard Default                       is disabled
+EtherChannel misconfig guard            is enabled
+UplinkFast                              is disabled
+BackboneFast                            is disabled
+Configured Pathcost method used is short
+
+Name                   Blocking Listening Learning Forwarding STP Active
+---------------------- -------- --------- -------- ---------- ----------
+VLAN0010                      0         0        0          1          1
+---------------------- -------- --------- -------- ---------- ----------
+1 vlan                        0         0        0          1          1
+  ok   a triangle has one root, one blocked port, and a root port on each other switch
+  ok   crossed parallel links: the root port faces the lower sender port ID
+DR-04 shut ports and routed ports are not in spanning tree
+  ok   a shut access port is left out and DWN never appears
+  ok   the routed port in lab 13 is left out
+DR-05 a Layer 2 port refuses an IP address
+  ok   Cisco prints the IOS error and keeps the port unchanged
+  ok   Dell refuses it too, with a lab note instead of an invented device message
+  ok   after no switchport, and on a VLAN interface, an address is still accepted
+DR-06 a routed port reports as routed in every command
+  ok   lab 13 l3a
+  ok   lab 13 l3b
+  ok   lab 14 l3sw
+DR-07 show spanning-tree summary has the summary layout
+  ok   mode, root list, path cost method and the count table
+DR-08 show vtp status counts the VLANs show vlan brief lists
+  ok   lab 1
+  ok   lab 5
+  ok   lab 9
+DR-09 an unconnected port shows auto speed and duplex
+  ok   the shut port shows auto auto, the connected port still shows what it negotiated
+  ok   lab 7 keeps its negotiated half duplex evidence on the flapping port
+  ok   a speed set by hand on an unconnected port is shown without the a- prefix
+DR-10 ip routing can be turned off and on
+  ok   lab 9: repair, then no ip routing stops inter-VLAN routing and ip routing brings it back
+End-to-end: the routed-port labs are solved by their own hints, on both vendors
+  ok   lab 13 and lab 14, cisco
+  ok   lab 13 and lab 14, dell
+  ok   vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco
+
+31 passed, 10 failed: SW1 primary, then SW2 primary: SW2 beats SW1 and the order of the commands decides; the stored priority does not move when a peer changes or the link goes down; a command for VLAN 20 leaves the VLAN 10 priority alone, and several VLANs in one command work; running-config, save and reload, and spanning-tree output agree; a VLAN that does not exist on the switch is refused, and root secondary needs no lower root; the macro cannot go below 0: the lab says so and keeps the old priority; VLAN 1006: detail, root, and summary row; VLAN 2000: detail, root, and summary row; VLAN 4094: detail, root, and summary row; summary counts add up with extended VLANs present

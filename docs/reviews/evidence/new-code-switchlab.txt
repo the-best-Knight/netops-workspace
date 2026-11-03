@@ -8,7 +8,21 @@ DR-03 show spanning-tree uses the VLAN asked for (Cisco PVST+)
   ok   vlan 10 prints VLAN0010 with priority 32768 + 10
   ok   a VLAN with no active ports lists no ports
   ok   with two switches exactly one is root, and the other has a root port toward it (found during remediation)
-  ok   root primary on the other switch moves the root there (review finding)
+IR-01 root macros store one priority per VLAN
+  ok   SW1 primary, then SW2 primary: SW2 beats SW1 and the order of the commands decides
+  ok   the stored priority does not move when a peer changes or the link goes down
+  ok   a command for VLAN 20 leaves the VLAN 10 priority alone, and several VLANs in one command work
+  ok   running-config, save and reload, and spanning-tree output agree
+  ok   an unsaved change is lost on reload, like the rest of the config
+  ok   a VLAN that does not exist on the switch is refused, and root secondary needs no lower root
+  ok   the macro cannot go below 0: the lab says so and keeps the old priority
+IR-02 extended VLANs have spanning-tree instances; only 1002 to 1005 are left out
+  ok   VLAN 1001: detail, root, and summary row
+  ok   VLAN 1006: detail, root, and summary row
+  ok   VLAN 2000: detail, root, and summary row
+  ok   VLAN 4094: detail, root, and summary row
+  ok   the reserved VLANs 1002 to 1005 never get an instance
+  ok   summary counts add up with extended VLANs present
   ok   a triangle has one root, one blocked port, and a root port on each other switch
   ok   crossed parallel links: the root port faces the lower sender port ID
 DR-04 shut ports and routed ports are not in spanning tree
@@ -39,4 +53,4 @@ End-to-end: the routed-port labs are solved by their own hints, on both vendors
   ok   lab 13 and lab 14, dell
   ok   vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco
 
-29 passed, 0 failed
+41 passed, 0 failed

@@ -46,8 +46,214 @@ Gi0/1               Desg DWN 4         128.1    P2p
 Gi0/2               Desg FWD 4         128.2    P2p
   FAIL with two switches exactly one is root, and the other has a root port toward it (found during remediation)
          switches that call themselves root: got 2 expected 1
-  FAIL root primary on the other switch moves the root there (review finding)
-         Cannot read properties of undefined (reading '0')
+IR-01 root macros store one priority per VLAN
+  FAIL SW1 primary, then SW2 primary: SW2 beats SW1 and the order of the commands decides
+         SW1#show spanning-tree vlan 10
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg FWD 4         128.1    P2p
+Gi0/2               Root FWD 4         128.2    P2p
+Gi0/3               Desg FWD 4         128.3    P2p
+  FAIL the stored priority does not move when a peer changes or the link goes down
+         SW1#show spanning-tree vlan 10
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg FWD 4         128.1    P2p
+Gi0/2               Root FWD 4         128.2    P2p
+Gi0/3               Desg FWD 4         128.3    P2pSW2#show spanning-tree vlan 10
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.a101.41a1
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.a101.41a1
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg FWD 4         128.1    P2p
+Gi0/2               Root FWD 4         128.2    P2p
+Vlan10              Desg FWD 4         128.3    P2p
+Vlan20              Desg FWD 4         128.4    P2p
+  FAIL a command for VLAN 20 leaves the VLAN 10 priority alone, and several VLANs in one command work
+         Cannot read properties of undefined (reading '10')
+  FAIL running-config, save and reload, and spanning-tree output agree
+         SW1#show running-config
+Building configuration...
+
+Current configuration : 665 bytes
+!
+version 15.2
+no service pad
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname SW1
+!
+boot-start-marker
+boot-end-marker
+!
+no aaa new-model
+!
+spanning-tree mode pvst
+spanning-tree extend system-id
+!
+vlan 10
+ name USERS
+!
+vlan 20
+ name SALES
+!
+vlan internal allocation policy ascending
+!
+interface GigabitEthernet0/1
+ switchport mode access
+ switchport access vlan 10
+!
+interface GigabitEthernet0/2
+ switchport mode trunk
+ switchport trunk allowed vlan 10
+!
+interface GigabitEthernet0/3
+ switchport mode access
+ switchport access vlan 20
+!
+!
+line con 0
+line vty 0 4
+ login
+line vty 5 15
+ login
+!
+end
+  FAIL an unsaved change is lost on reload, like the rest of the config
+         not equal: got 32769 expected 32778
+  FAIL a VLAN that does not exist on the switch is refused, and root secondary needs no lower root
+         SW1(config)#spanning-tree vlan 99 root primary
+  FAIL the macro cannot go below 0: the lab says so and keeps the old priority
+         SW1(config)#spanning-tree vlan 10 root primary
+IR-02 extended VLANs have spanning-tree instances; only 1002 to 1005 are left out
+  FAIL VLAN 1001: detail, root, and summary row
+         SW1#show spanning-tree vlan 1001
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+  FAIL VLAN 1006: detail, root, and summary row
+         SW1#show spanning-tree vlan 1006
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+  FAIL VLAN 2000: detail, root, and summary row
+         SW1#show spanning-tree vlan 2000
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+  FAIL VLAN 4094: detail, root, and summary row
+         SW1#show spanning-tree vlan 4094
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg DWN 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
+  FAIL the reserved VLANs 1002 to 1005 never get an instance
+         VLAN 1002
+  FAIL summary counts add up with extended VLANs present
+         SW1#show spanning-tree summary
+VLAN0001
+  Spanning tree enabled protocol ieee
+  Root ID    Priority    32769
+             Address     0050.379e.7337
+             This bridge is the root
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+             Address     0050.379e.7337
+             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+             Aging Time  300 sec
+
+Interface           Role Sts Cost      Prio.Nbr Type
+------------------- ---- --- --------- -------- --------------------------------
+Gi0/1               Desg FWD 4         128.1    P2p
+Gi0/2               Desg FWD 4         128.2    P2p
   FAIL a triangle has one root, one blocked port, and a root port on each other switch
          blocked ports: got 0 expected 1
   FAIL crossed parallel links: the root port faces the lower sender port ID
@@ -154,4 +360,4 @@ Vlan 10                       10.1.1.1            YES   manual up         up
 Ethernet 1/1/1                unassigned          YES   unset  up         up
 Ethernet 1/1/24               10.1.2.1            YES   manual up         up
 
-5 passed, 24 failed: every guided switch, cisco; every guided switch, dell; no guided lab builds a port the declared switch does not have; vlan 10 prints VLAN0010 with priority 32768 + 10; a VLAN with no active ports lists no ports; with two switches exactly one is root, and the other has a root port toward it (found during remediation); root primary on the other switch moves the root there (review finding); a triangle has one root, one blocked port, and a root port on each other switch; crossed parallel links: the root port faces the lower sender port ID; a shut access port is left out and DWN never appears; the routed port in lab 13 is left out; Cisco prints the IOS error and keeps the port unchanged; Dell refuses it too, with a lab note instead of an invented device message; lab 13 l3a; lab 13 l3b; lab 14 l3sw; mode, root list, path cost method and the count table; lab 1; lab 5; lab 9; the shut port shows auto auto, the connected port still shows what it negotiated; a speed set by hand on an unconnected port is shown without the a- prefix; lab 9: repair, then no ip routing stops inter-VLAN routing and ip routing brings it back; vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco
+5 passed, 36 failed: every guided switch, cisco; every guided switch, dell; no guided lab builds a port the declared switch does not have; vlan 10 prints VLAN0010 with priority 32768 + 10; a VLAN with no active ports lists no ports; with two switches exactly one is root, and the other has a root port toward it (found during remediation); SW1 primary, then SW2 primary: SW2 beats SW1 and the order of the commands decides; the stored priority does not move when a peer changes or the link goes down; a command for VLAN 20 leaves the VLAN 10 priority alone, and several VLANs in one command work; running-config, save and reload, and spanning-tree output agree; an unsaved change is lost on reload, like the rest of the config; a VLAN that does not exist on the switch is refused, and root secondary needs no lower root; the macro cannot go below 0: the lab says so and keeps the old priority; VLAN 1001: detail, root, and summary row; VLAN 1006: detail, root, and summary row; VLAN 2000: detail, root, and summary row; VLAN 4094: detail, root, and summary row; the reserved VLANs 1002 to 1005 never get an instance; summary counts add up with extended VLANs present; a triangle has one root, one blocked port, and a root port on each other switch; crossed parallel links: the root port faces the lower sender port ID; a shut access port is left out and DWN never appears; the routed port in lab 13 is left out; Cisco prints the IOS error and keeps the port unchanged; Dell refuses it too, with a lab note instead of an invented device message; lab 13 l3a; lab 13 l3b; lab 14 l3sw; mode, root list, path cost method and the count table; lab 1; lab 5; lab 9; the shut port shows auto auto, the connected port still shows what it negotiated; a speed set by hand on an unconnected port is shown without the a- prefix; lab 9: repair, then no ip routing stops inter-VLAN routing and ip routing brings it back; vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco

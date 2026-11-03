@@ -17,11 +17,13 @@ DR-13 and DR-14 MTU failures are named as MTU problems
   ok   Windows DF failure: MTU named, no claim that the host is down
   ok   Linux local MTU error: probes counted, MTU 1400 named
   ok   a mix of DF errors and replies is still partial loss with the MTU note
-  ok   Windows DF reported by a router names that router
+  ok   Windows DF reported by a router: one clear story and no contradictory warning
+  ok   DF errors mixed with one good reply: partial loss, worded as no echo reply
+  ok   a summary that really disagrees with the pasted probes is still flagged
   ok   Linux remote Frag needed names the router and the MTU
   ok   a local MTU error between replies is counted once
   ok   MTU loss mixed with timeouts uses plural wording and keeps the timeout
   ok   IPv6 MTU advice uses 48 bytes of headers
   ok   an ordinary total loss still says the target may be down
 
-21 passed, 0 failed
+23 passed, 0 failed

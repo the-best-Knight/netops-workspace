@@ -1,0 +1,46 @@
+LS-01 YAML block scalars
+  ok   literal block under password is hidden
+  ok   folded block with chomping and indent indicators
+  ok   CRLF line endings
+  ok   nested mapping and a following sibling field stay readable
+  ok   a lone block scalar with no other YAML lines is still hidden
+  ok   the block indicator itself is kept
+LS-02 Digest authorization
+  ok   plain Digest header hides every parameter
+  ok   Proxy-Authorization with CRLF stops at the line end
+  ok   Digest header inside a JSON string
+  ok   Bearer tokens still work
+LS-03 hostnames outside the fixed suffix list
+  ok   host= fields with unusual suffixes
+  ok   plain text names under added suffixes
+  ok   versions and file names are not treated as hosts
+LS-04 mask allowlist
+  ok   masks are kept where they are masks
+  ok   the same numbers as addresses are redacted
+  ok   the shipped default allow-list holds no mask-looking address
+LS-05 issued placeholders never change
+  ok   deleting a mapping does not renumber later placeholders
+  ok   a new secret after a delete gets a new number
+DR-11 Windows Wi-Fi keys
+  ok   Key Content is hidden and the label is kept
+  ok   a key with spaces and symbols is hidden whole
+  ok   a lone Key Content line is hidden
+DR-12 name= values that are not paths
+  ok   name values are not turned into log file paths
+  ok   name values that are not paths stay hidden
+  ok   auditd path values are still replaced with a path
+IR-04 profile names with spaces and quotes
+  FAIL a double-quoted name with spaces is hidden whole, and the restore round-trips
+         still visible: My Home WiFi in "netsh wlan show profile name=\"My Home WiFi\" key=[SECRET_1]"
+  FAIL single quotes, CRLF and a second quoted value on the line
+         still visible: Guest Net 5G in "netsh wlan show profile name='Guest Net 5G' key=[SECRET_1]\r\n"
+  FAIL an unquoted netsh profile name with spaces stops before key= and interface=
+         still visible: Home WiFi in "netsh wlan show profile name=[ID_1] Home WiFi key=[SECRET_1]"
+  FAIL a name: line keeps only the rest of that line, up to a comma
+         still visible: Home WiFi in "    Name                   : [ID_1] Home WiFi\r\n"
+  ok   empty values are left alone
+  ok   real paths in quotes are still paths
+  FAIL long lines of spaces after name: do not stall
+         slow: 2387 ms
+
+26 passed, 5 failed: a double-quoted name with spaces is hidden whole, and the restore round-trips; single quotes, CRLF and a second quoted value on the line; an unquoted netsh profile name with spaces stops before key= and interface=; a name: line keeps only the rest of that line, up to a comma; long lines of spaces after name: do not stall

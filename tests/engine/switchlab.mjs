@@ -11,6 +11,8 @@ function lab(id, vendor) {
   const L = T.LEVELS.find((l) => l.id === id), net = L.build();
   T.__set('vendor', vendor); T.__set('net', net); T.__set('currentLevel', L);
   for (const k of Object.keys(T.__get('consoleSessions'))) delete T.__get('consoleSessions')[k];
+  // what startLab does: the saved startup configs are empty and the lab's first state is what an unsaved reload returns to
+  T.__set('startupCfg', {}); T.__set('coachInit', JSON.stringify(net.devices));
   return { L, net };
 }
 function on(dev) { T.__set('selectedDeviceId', dev); T.__set('confMode', false); T.__set('confIface', null); T.__set('confAcl', null); }
@@ -61,13 +63,61 @@ test('with two switches exactly one is root, and the other has a root port towar
   ok(!/^\S+\s+Root /m.test(roots[0][1]), 'the root bridge lists a root port\n' + roots[0][1]);
 });
 
-test('root primary on the other switch moves the root there (review finding)', () => {
-  const { net } = lab(6, 'cisco'), out = () => switches(net).map((d) => { on(d.id); priv('cisco'); return [d.name, run('show spanning-tree vlan 10')]; });
-  const nonRoot = out().find(([, t]) => !/This bridge is the root/.test(t))[0], dev = switches(net).find((d) => d.name === nonRoot);
-  on(dev.id); conf('cisco'); run('spanning-tree vlan 10 root primary'); run('end');
-  const after = out(), mine = after.find(([n]) => n === nonRoot)[1]; ok(/This bridge is the root/.test(mine) && /Priority\s+24586/.test(mine), mine);
-  ok(after.filter(([, t]) => /This bridge is the root/.test(t)).length === 1, 'two roots');
+const prio = (t) => +(/Bridge ID  Priority\s+(\d+)/.exec(t) || [])[1], isRoot = (t) => /This bridge is the root/.test(t);
+const showAll = (net, v) => Object.fromEntries(switches(net).map((d) => { on(d.id); priv('cisco'); return [d.id, run('show spanning-tree vlan ' + v)]; }));
+const cfgOn = (id, lines) => { on(id); conf('cisco'); lines.forEach(run); run('end'); };
+console.log('IR-01 root macros store one priority per VLAN');
+test('SW1 primary, then SW2 primary: SW2 beats SW1 and the order of the commands decides', () => {
+  const { net } = lab(6, 'cisco'); cfgOn('sw1', ['spanning-tree vlan 10 root primary']); let o = showAll(net, 10);
+  ok(isRoot(o.sw1) && prio(o.sw1) === 24586, o.sw1); cfgOn('sw2', ['spanning-tree vlan 10 root primary']); o = showAll(net, 10);
+  ok(isRoot(o.sw2) && !isRoot(o.sw1) && prio(o.sw2) === 20490 && prio(o.sw1) === 24586, o.sw1 + o.sw2);
+  eq([net.devices.sw1.stpPrio[10], net.devices.sw2.stpPrio[10]], [24576, 20480]);
 });
+test('the stored priority does not move when a peer changes or the link goes down', () => {
+  const { net } = lab(6, 'cisco'); cfgOn('sw1', ['spanning-tree vlan 10 root primary']); cfgOn('sw2', ['spanning-tree vlan 10 root primary']);
+  cfgOn('sw2', ['spanning-tree vlan 10 root secondary']); const o = showAll(net, 10); ok(isRoot(o.sw1) && prio(o.sw1) === 24586 && prio(o.sw2) === 28682, o.sw1 + o.sw2);
+  cfgOn('sw1', ['interface Gi0/2', 'shutdown']); const down = showAll(net, 10); eq(prio(down.sw1), 24586, 'priority changed when the link went down'); ok(isRoot(down.sw1), down.sw1);
+  ok(/does not exist/.test(down.sw2), 'SW2 has no VLAN 10 port left, so no instance\n' + down.sw2); eq(net.devices.sw2.stpPrio[10], 28672, 'the stored priority is kept');
+  on('sw2'); priv('cisco'); ok(/^spanning-tree vlan 10 priority 28672$/m.test(run('show running-config')), 'running-config lost the priority');
+});
+test('a command for VLAN 20 leaves the VLAN 10 priority alone, and several VLANs in one command work', () => {
+  const { net } = lab(6, 'cisco'); cfgOn('sw1', ['spanning-tree vlan 10 root primary', 'spanning-tree vlan 20 root secondary']);
+  eq([net.devices.sw1.stpPrio[10], net.devices.sw1.stpPrio[20]], [24576, 28672]); cfgOn('sw1', ['spanning-tree vlan 10,20 root primary']); eq([net.devices.sw1.stpPrio[10], net.devices.sw1.stpPrio[20]], [24576, 24576]);
+});
+test('running-config, save and reload, and spanning-tree output agree', () => {
+  const { net } = lab(6, 'cisco'); cfgOn('sw1', ['spanning-tree vlan 10 root primary', 'spanning-tree vlan 20 root secondary']); on('sw1'); priv('cisco');
+  const cfg = run('show running-config'); ok(/^spanning-tree vlan 10 priority 24576$/m.test(cfg) && /^spanning-tree vlan 20 priority 28672$/m.test(cfg), cfg);
+  ok(prio(run('show spanning-tree vlan 10')) === 24586 && prio(run('show spanning-tree vlan 20')) === 28692, 'output disagrees with the stored priority');
+  run('write memory'); run('reload'); run('yes'); on('sw1'); priv('cisco');
+  ok(/^spanning-tree vlan 10 priority 24576$/m.test(run('show running-config')), 'priority lost across reload'); eq(prio(run('show spanning-tree vlan 10')), 24586);
+});
+test('an unsaved change is lost on reload, like the rest of the config', () => {
+  lab(6, 'cisco'); cfgOn('sw1', ['spanning-tree vlan 10 root primary']); on('sw1'); priv('cisco'); run('reload'); run('no'); run('yes'); on('sw1'); priv('cisco');
+  eq(prio(run('show spanning-tree vlan 10')), 32778);
+});
+test('a VLAN that does not exist on the switch is refused, and root secondary needs no lower root', () => {
+  const { net } = lab(6, 'cisco'); on('sw1'); conf('cisco'); const t = run('spanning-tree vlan 99 root primary'); ok(/^%/m.test(t) && !net.devices.sw1.stpPrio, t);
+});
+test('the macro cannot go below 0: the lab says so and keeps the old priority', () => {
+  const { net } = lab(6, 'cisco'); net.devices.sw2.stpPrio = { 10: 0 }; on('sw1'); conf('cisco'); const t = run('spanning-tree vlan 10 root primary'); ok(/^% Lab note:/m.test(t) && !(net.devices.sw1.stpPrio || {})[10], t);
+});
+
+console.log('IR-02 extended VLANs have spanning-tree instances; only 1002 to 1005 are left out');
+for (const v of [1001, 1006, 2000, 4094]) test('VLAN ' + v + ': detail, root, and summary row', () => {
+  lab(1, 'cisco'); on('sw1'); conf('cisco'); ['vlan ' + v, 'exit', 'interface Gi0/2', 'switchport access vlan ' + v, 'end'].forEach(run);
+  const t = run('show spanning-tree vlan ' + v), name = 'VLAN' + String(v).padStart(4, '0');
+  ok(new RegExp('^' + name + '$', 'm').test(t) && prio(t) === 32768 + v && isRoot(t) && /^Gi0\/2\s+Desg FWD/m.test(t), t);
+  const sum = run('show spanning-tree summary'); ok(new RegExp('^' + name + '\\s+0\\s+0\\s+0\\s+1\\s+1$', 'm').test(sum) && /^Root bridge for: .*VLAN/m.test(sum) && new RegExp('Root bridge for:.*' + name).test(sum), sum);
+});
+test('the reserved VLANs 1002 to 1005 never get an instance', () => {
+  lab(1, 'cisco'); on('sw1'); priv('cisco'); for (const v of [1002, 1003, 1004, 1005]) ok(/does not exist/.test(run('show spanning-tree vlan ' + v)), 'VLAN ' + v);
+  ok(!/VLAN100[2-5]/.test(run('show spanning-tree summary')), 'reserved VLAN in the summary');
+});
+test('summary counts add up with extended VLANs present', () => {
+  lab(1, 'cisco'); on('sw1'); conf('cisco'); ['vlan 2000', 'exit', 'interface Gi0/1', 'no shutdown', 'switchport access vlan 2000', 'end'].forEach(run);
+  const sum = run('show spanning-tree summary'); ok(/^2 vlans\s+0\s+0\s+0\s+2\s+2$/m.test(sum), sum);
+});
+
 // A synthetic loop: three switches in a triangle, and two crossed links between a pair. Built here because no guided lesson has a loop.
 function loopNet(links, prio) {
   const sw = (id) => ({ id, type: 'switch', name: id.toUpperCase(), vlans: {}, ifaces: {} }), net = { devices: { s1: sw('s1'), s2: sw('s2'), s3: sw('s3') }, links: [] };

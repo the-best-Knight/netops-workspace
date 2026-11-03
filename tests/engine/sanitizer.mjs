@@ -66,4 +66,25 @@ test('name values that are not paths stay hidden', () => { noLeak('netsh wlan sh
 test('auditd path values are still replaced with a path', () => {
   const r = noLeak('type=PATH msg=audit(1700000000.123:42): item=0 name="/home/alice/secret.txt" inode=1', ['alice']); ok(/name="\/home\//.test(r.out), r.out);
 });
+console.log('IR-04 profile names with spaces and quotes');
+test('a double-quoted name with spaces is hidden whole, and the restore round-trips', () => {
+  const r = noLeak('netsh wlan show profile name="My Home WiFi" key=clear', ['My Home WiFi', 'Home WiFi']); ok(/name="\[ID_\d+\]"/.test(r.out), r.out);
+});
+test('single quotes, CRLF and a second quoted value on the line', () => {
+  noLeak("netsh wlan show profile name='Guest Net 5G' key=clear\r\n", ['Guest Net 5G']);
+  noLeak('name="Office Floor 2" and name="Lab Wifi"', ['Office Floor 2', 'Lab Wifi']);
+});
+test('an unquoted netsh profile name with spaces stops before key= and interface=', () => {
+  const r = noLeak('netsh wlan show profile name=My Home WiFi key=clear', ['My Home WiFi', 'Home WiFi']); ok(/ key=/.test(r.out), r.out);
+  noLeak('netsh wlan delete profile name=Cafe Guest interface=Wi-Fi', ['Cafe Guest']);
+});
+test('a name: line keeps only the rest of that line, up to a comma', () => {
+  noLeak('    Name                   : My Home WiFi\r\n', ['My Home WiFi', 'Home WiFi']);
+  const r = clean('{name: web, port: 80}'); ok(/port: 80/.test(r.out) && !r.out.includes('name: web'), r.out);
+});
+test('empty values are left alone', () => { for (const t of ['name=""', "name=''", 'name=']) eq(clean(t).out, t); });
+test('real paths in quotes are still paths', () => {
+  const r = noLeak('type=PATH msg=audit(1700000000.123:42): item=0 name="/home/alice/secret.txt" inode=1', ['alice']); ok(/name="\/home\//.test(r.out) && !/\[ID_/.test(r.out), r.out);
+});
+test('long lines of spaces after name: do not stall', () => { const t0 = Date.now(); clean('name:' + ' '.repeat(50000) + 'x\nname=' + 'a '.repeat(20000)); ok(Date.now() - t0 < 2000, 'slow: ' + (Date.now() - t0) + ' ms'); });
 done();

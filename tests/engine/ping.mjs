@@ -65,9 +65,21 @@ test('a mix of DF errors and replies is still partial loss with the MTU note', (
   const r = run('Pinging 10.0.0.1 with 1472 bytes of data:\nReply from 10.0.0.1: bytes=1472 time=1ms TTL=64\nPacket needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 2, Received = 1, Lost = 1 (50% loss),\n');
   ok(/MTU/.test(said(r)), said(r)); eq([r.sent, r.received], [2, 1]);
 });
-test('Windows DF reported by a router names that router', () => {
-  const t = said(run('Pinging 10.0.0.1 with 1472 bytes of data:\nReply from 10.0.0.254: Packet needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),\n'));
-  ok(/10\.0\.0\.254 reported that it needs to fragment/.test(t) && !/may be down/.test(t), t);
+test('Windows DF reported by a router: one clear story and no contradictory warning', () => {
+  const r = run('Pinging 10.0.0.1 with 1472 bytes of data:\nReply from 10.0.0.254: Packet needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),\n'), all = r.observations.map((o) => o.text);
+  const t = all.join('\n'); eq([r.sent, r.received, r.lossPct], [1, 0, 100]);
+  ok(all.some((x) => /10\.0\.0\.254 reported that it needs to fragment/.test(x)), t);
+  ok(all.some((x) => /no echo reply from the target/i.test(x)), 'no statement that the target sent no echo\n' + t);
+  for (const bad of [/do not agree/, /same run/, /cannot be right/, /may be down/, /got no reply/, /does not match/]) ok(!all.some((x) => bad.test(x)), 'contradictory text ' + bad + '\n' + t);
+  ok(all.some((x) => /counts 1 error reply/.test(x) && /needs to fragment/.test(x)), 'the received-count explanation should name this kind of reply\n' + t);
+});
+test('DF errors mixed with one good reply: partial loss, worded as no echo reply', () => {
+  const all = run('Pinging 10.0.0.1 with 1472 bytes of data:\nReply from 10.0.0.1: bytes=1472 time=1ms TTL=64\nReply from 10.0.0.254: Packet needs to be fragmented but DF set.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),\n').observations.map((o) => o.text), t = all.join('\n');
+  ok(all.some((x) => /1 of 2 probes \(50%\) got no echo reply from the target/.test(x)) && !/do not agree|same run|cannot be right/.test(t), t);
+});
+test('a summary that really disagrees with the pasted probes is still flagged', () => {
+  const t = said(run('Pinging 10.0.0.1 with 32 bytes of data:\nReply from 10.0.0.1: bytes=32 time=1ms TTL=64\nRequest timed out.\nRequest timed out.\nRequest timed out.\n\nPing statistics for 10.0.0.1:\n    Packets: Sent = 4, Received = 3, Lost = 1 (25% loss),\n'));
+  ok(/do not agree/.test(t), t);
 });
 test('Linux remote Frag needed names the router and the MTU', () => {
   const r = run('PING 10.0.0.1 (10.0.0.1) 1472(1500) bytes of data.\nFrom 10.0.0.254 icmp_seq=1 Frag needed and DF set (mtu = 1400)\nping: local error: message too long, mtu=1400\n\n--- 10.0.0.1 ping statistics ---\n2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1001ms\n'), t = said(r);

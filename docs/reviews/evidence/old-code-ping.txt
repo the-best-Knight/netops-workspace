@@ -22,8 +22,13 @@ DR-13 and DR-14 MTU failures are named as MTU problems
          1 of 2 probes (50%) got no reply. Only 1 probes are in the pasted text, so the figure comes from the summary line.
 Round trip: lowest 1 ms, average 1 ms, highest 1 ms.
 The summary line says 2 probes but only 1 appear in the pasted text.
-  FAIL Windows DF reported by a router names that router
-         All 1 probes were answered.
+  FAIL Windows DF reported by a router: one clear story and no contradictory warning
+         not equal: got [1,1,0] expected [1,0,100]
+  FAIL DF errors mixed with one good reply: partial loss, worded as no echo reply
+         All 2 probes were answered.
+Round trip: lowest 1 ms, average 1 ms, highest 1 ms.
+The summary line says 2 probes but only 1 appear in the pasted text.
+  ok   a summary that really disagrees with the pasted probes is still flagged
   FAIL Linux remote Frag needed names the router and the MTU
          No probes were found in this output.
   FAIL a local MTU error between replies is counted once
@@ -37,4 +42,4 @@ The summary line says 4 probes but only 2 appear in the pasted text.
          assertion failed
   ok   an ordinary total loss still says the target may be down
 
-13 passed, 8 failed: Windows DF failure: MTU named, no claim that the host is down; Linux local MTU error: probes counted, MTU 1400 named; a mix of DF errors and replies is still partial loss with the MTU note; Windows DF reported by a router names that router; Linux remote Frag needed names the router and the MTU; a local MTU error between replies is counted once; MTU loss mixed with timeouts uses plural wording and keeps the timeout; IPv6 MTU advice uses 48 bytes of headers
+14 passed, 9 failed: Windows DF failure: MTU named, no claim that the host is down; Linux local MTU error: probes counted, MTU 1400 named; a mix of DF errors and replies is still partial loss with the MTU note; Windows DF reported by a router: one clear story and no contradictory warning; DF errors mixed with one good reply: partial loss, worded as no echo reply; Linux remote Frag needed names the router and the MTU; a local MTU error between replies is counted once; MTU loss mixed with timeouts uses plural wording and keeps the timeout; IPv6 MTU advice uses 48 bytes of headers
