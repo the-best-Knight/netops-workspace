@@ -1,6 +1,6 @@
 # IT Skills Kit remediation, 3 November 2026
 
-This pass fixes the 14 defects in [2026-11-03-deep-review.md](2026-11-03-deep-review.md), starting from commit `9057683`. It adds no features and changes no UI layout. Sections 1 to 9 describe the first commit on this branch (`a4cd402`). Section 10 covers the follow-up after an independent review of that commit (IR-01 to IR-04), and its numbers replace the test counts in section 8.
+This pass fixes the 14 defects in [2026-11-03-deep-review.md](2026-11-03-deep-review.md), starting from commit `9057683`. It adds no features and changes no UI layout. Sections 1 to 9 describe the first commit on this branch (`a4cd402`). Section 10 covers the follow-up after an independent review of that commit (IR-01 to IR-04), and section 11 covers the last sanitizer performance defect (PF-01). The test counts in section 11 are the current ones.
 
 ## Summary
 
@@ -248,3 +248,92 @@ $ git diff --check                      no output
 - **Not modeled:** a limit on spanning-tree instances. Real switches cap the count. The lab accepts any VLAN it accepts elsewhere, and the summary lists them all.
 - **Still open from section 5:** N-02, N-03. N-04 is now fixed (IR-04).
 - **Dell guided `root` command:** accepted with a lab note, no state (SC-03).
+
+## 11. Follow-up: the hostname rule was quadratic (PF-01)
+
+The independent review of `107cf8a` confirmed IR-01 to IR-04 and found one failing check: 239 of 240 passed. The failure was "long lines of spaces after name: do not stall", which I added in section 10 and which timed out on the reviewer's machine. My earlier note (R-06) fixed the `auditpath` rule but I did not look for other rules with the same flaw, and I read the passing test on my faster machine as proof.
+
+### Cause
+
+| | |
+|---|---|
+| Rule | `fqdn`, the Domain Names rule |
+| Location | its first branch began with a lookbehind, `(?<=\b(?:host|hostname|server|...)["']?\s*[:=]\s*["']?)`, which hides a hostname that follows a keyword like `host=` |
+| Why it is slow | The lookbehind contains `\s*`, so its length is not fixed. The engine tries it at every position of the input and, in a run of spaces, walks back over all the spaces before it to see whether a keyword sits behind them. Work per position grows with the run, so total work grows with its square |
+| Input needed | Only whitespace. A run of spaces, tabs or newlines followed by anything is enough, with no keyword anywhere |
+| Pre-existing | Yes. The timings on the original `9057683` and on `107cf8a` are identical (below). Neither the first remediation nor IR-01 to IR-04 touched this rule |
+| Only this rule | A sweep of all 99 rules over 6 whitespace shapes (spaces, tabs, `host:` then spaces, `Digest` then spaces, `mask` then spaces, newline and spaces) at 12,500 and 50,000 characters found `fqdn` and nothing else. On the original code it flagged `fqdn` in all 6 shapes. Now it flags none |
+
+### Fix
+
+The keyword is now matched going forward. The branch reads `\b(?:host|hostname|server|...)["']?\s*[:=]\s*["']?(HOSTNAME)\b`, with the hostname in capture group 1. The suffix-list branch has no capture group, so for that branch the whole match is the hostname, which the replacement code already handled. The rule gets `group: 1`. Nothing else changes: the keyword list, the hostname pattern, the suffix list and the `accept` filter are as before. A forward scan starts only at a keyword and visits each space once, so it is linear.
+
+### Measured timings (all 99 rules on, best of 3, Node v26.12.0)
+
+| Input | Characters | 6,250 | 12,500 | 25,000 | 50,000 | 100,000 |
+|---|---|---|---|---|---|---|
+| Spaces then `x` | before (`107cf8a`) | 24 ms | 97 ms | 383 ms | 1,539 ms | 6,568 ms |
+| | after | 1 ms | 1 ms | 2 ms | 4 ms | 9 ms |
+| `host:` then spaces | before | 12 ms | 47 ms | 184 ms | 732 ms | 2,918 ms |
+| | after | 1 ms | 1 ms | 2 ms | 4 ms | 8 ms |
+| The failing test's own input | before | 32 ms | 110 ms | 417 ms | 1,651 ms | 6,585 ms |
+| | after | 6 ms | 7 ms | 8 ms | 10 ms | 15 ms |
+
+Before, each doubling of the input multiplied the time by about 4 (quadratic). After, it adds a small amount (linear). The `fqdn` rule alone on 50,000 spaces went from 1,626 ms to 3 ms. The reviewer saw about 3 seconds on their machine, which is consistent with this being roughly 2 times slower than mine.
+
+### Detection is unchanged
+
+| Check | Result |
+|---|---|
+| 6,000 generated lines (23 keywords incl. look-alikes such as `ghost`, `localhost`, `proxyhost`; 13 separators incl. tabs, CRLF and a newline after the colon; 3 quote styles; 1 to 3 labels; 18 suffixes incl. unusual ones such as `zzz`, `cloudy`, `systems`; 10 trailing forms such as `:443`, `/path`, `,`), full pipeline and `fqdn` rule alone, `107cf8a` against now | 12,000 comparisons, **0 differences** |
+| Same lines, `fqdn` rule alone, original `9057683` against now | 6,000 comparisons, **0 differences** |
+| 19 real fixtures in `tests/fixtures`, `107cf8a` against now | 0 changed lines |
+| Leak corpus (40 secret-bearing lines) | 39 hidden, 0 round-trip failures. The visible line is the unverified Junos form, as before |
+
+### Tests added (`tests/engine/sanitizer.mjs`, 9 new)
+
+The existing test "long lines of spaces after name: do not stall" is unchanged: same input, same 2,000 ms limit.
+
+| New test | What it checks |
+|---|---|
+| "doubling the whitespace does not quadruple the time" × 4 shapes (spaces, tabs, `host:` then spaces, `Authorization: Digest` then spaces) | Runs 10,000, 20,000, 40,000 and 80,000 characters, best of 3. Fails if 80,000 takes 500 ms or more, or takes 24 or more times as long as 10,000 (floor of 5 ms). Fixed code is far under both limits (9 ms at 100,000 characters). Quadratic code exceeds both (1,539 ms at 50,000) |
+| "a whitespace run before a real hostname still finds the hostname" | 30,000 spaces, then `host=core.company.tech`: hidden, and restores |
+| "hostnames named by a keyword are hidden, whatever the spacing, quotes or case" | 10 forms: bare, quoted, JSON, tabs, spaces around the colon, newline after the colon, CRLF, upper case, deep names. Each hidden and each restored |
+| "hostnames with a known suffix are hidden without any keyword" | 4 forms, hidden and restored |
+| "the same hostname gets the same placeholder in both forms, and restores" | Round trip |
+| "words that only look like keywords, and plain versions, are left alone" | `version=1.2.3`, `ghost: 1.2.3`, `server: nginx/1.18.0`, `hostname: localhost`, `target=build.sh` unchanged |
+
+**Do the tests detect the original failure?** Yes. Against the original `9057683` and against `107cf8a`, the four timing tests fail. Against `107cf8a` they are the only four failures. Against the original, 12 tests fail (the eight from earlier sections and these four). The detection and round-trip tests pass on all three, as they should, since detection is unchanged. They guard against the fix weakening hostname detection. Raw output: `evidence/`. The new timing tests passed on 5 of 5 repeated runs.
+
+### Exact commands and results (Node v26.12.0)
+
+```
+$ node scripts/check-scripts.mjs        18 scripts checked, 0 failed.
+$ node tests/engine/suite.mjs           73 passed, 0 failed
+$ node tests/engine/sanitizer.mjs       40 passed, 0 failed
+$ node tests/engine/configdiff.mjs       9 passed, 0 failed
+$ node tests/engine/calculator.mjs       5 passed, 0 failed
+$ node tests/engine/routing.mjs          4 passed, 0 failed
+$ node tests/engine/switching.mjs       23 passed, 0 failed
+$ node tests/engine/switchlab.mjs       41 passed, 0 failed
+$ node tests/engine/vsphere.mjs          8 passed, 0 failed
+$ node tests/engine/dns.mjs             11 passed, 0 failed
+$ node tests/engine/ping.mjs            23 passed, 0 failed
+$ node tests/engine/lessons.mjs          6 passed, 0 failed
+$ node tests/engine/content.mjs          6 passed, 0 failed
+$ node tests/engine/fuzz.mjs 400        400 batches, 56 devices, 0 exceptions, 0 slow batches; Object.prototype clean: true
+$ node tests/engine/fuzz.mjs 800        800 batches, 78 devices, 0 exceptions, 0 slow batches; Object.prototype clean: true
+$ git diff --check                      no output
+```
+
+**Runner total: 249 passed, 0 failed** (the twelve runners above: 73 + 40 + 9 + 5 + 4 + 23 + 41 + 8 + 11 + 23 + 6 + 6). That is 9 more than the 240 in section 10, all in the sanitizer, and it clears the one failure the reviewer saw. The total does not include fuzz batches or browser checks.
+
+**Browser suites (Firefox, headless):** `sh tests/run.sh` ran all 23 files in `tests/browser` against this change: **23/23 test files passed, 510/510 checks passed**, exit 0. This includes the hub, branding, light and dark UI standards, the Switch Lab, the Ping Analyzer, the calculator and every Topology Builder suite. Output: `evidence/browser-run.txt`. None of them drive the sanitizer's redaction, so they say nothing about the hostname rule directly. They show the rest of the page still loads and behaves. The sanitizer page itself was checked by hand, next.
+
+**Real page, Log Sanitizer (Firefox pane, not a test file):** I pasted a run of spaces, then `host=core.company.tech` and `server: vpn.acme-corp.zzz`, clearing the input between pastes. Time until the sanitized output appeared: 373 ms at 12,500 spaces, 393 ms at 50,000 and 417 ms at 100,000. That is a flat cost of about 370 ms (mostly the page's own input delay) plus a few milliseconds. Both hostnames were hidden each time, and the console had no errors. I did not run the same paste on `107cf8a` in the page, so there is no before number for the page; the before numbers are the Node timings above.
+
+### Not run, and limits
+
+- **Machine speed.** All timings are from one Mac with Node v26.12.0. The reviewer's machine is slower. The new timing tests compare the time at 80,000 characters with the time at 10,000 characters on the same machine, and use a 500 ms cap that is 50 times what the fixed code needs, so they should hold on slower machines. I have not run them there.
+- **Other quadratic shapes.** The sweep covered whitespace. I did not search every rule for other slow shapes, for example long hyphenated words. Nothing in this pass suggests a problem there, and I make no claim about them.
+- **Browser suites and long pastes.** The Firefox test files contain no long-whitespace case. The page check above is a single manual run, not an automated test.

@@ -87,4 +87,29 @@ test('real paths in quotes are still paths', () => {
   const r = noLeak('type=PATH msg=audit(1700000000.123:42): item=0 name="/home/alice/secret.txt" inode=1', ['alice']); ok(/name="\/home\//.test(r.out) && !/\[ID_/.test(r.out), r.out);
 });
 test('long lines of spaces after name: do not stall', () => { const t0 = Date.now(); clean('name:' + ' '.repeat(50000) + 'x\nname=' + 'a '.repeat(20000)); ok(Date.now() - t0 < 2000, 'slow: ' + (Date.now() - t0) + ' ms'); });
+console.log('Hostname rule: runs of whitespace cost linear time, and detection is unchanged');
+// Slowest of a few runs, so one slow scheduling hiccup does not fail the check.
+const timeIt = (t) => { let best = Infinity; for (let i = 0; i < 3; i++) { const t0 = performance.now(); clean(t); best = Math.min(best, performance.now() - t0); } return best; };
+const shapes = { spaces: (n) => ' '.repeat(n) + 'x', tabs: (n) => '\t'.repeat(n) + 'x', 'host: then spaces': (n) => 'host:' + ' '.repeat(n) + 'x', 'Digest then spaces': (n) => 'Authorization: Digest' + ' '.repeat(n) + 'x' };
+for (const [name, mk] of Object.entries(shapes)) test('doubling the whitespace does not quadruple the time (' + name + ')', () => {
+  // Quadratic work measured about 65 ms at 12,500 and 1,600 ms at 50,000. Linear work stays in single digits.
+  const t = [10000, 20000, 40000, 80000].map((n) => timeIt(mk(n)));
+  ok(t[3] < 500, '80,000 characters took ' + Math.round(t[3]) + ' ms (' + t.map(Math.round).join(', ') + ')');
+  ok(t[3] / Math.max(t[0], 5) < 24, 'time grew ' + (t[3] / Math.max(t[0], 5)).toFixed(1) + 'x for 8x the input (' + t.map(Math.round).join(', ') + ' ms)');
+});
+test('a whitespace run before a real hostname still finds the hostname', () => {
+  const r = noLeak('x' + ' '.repeat(30000) + 'host=core.company.tech\n', ['core.company']); ok(/host=\[?\S/.test(r.out), r.out);
+});
+test('hostnames named by a keyword are hidden, whatever the spacing, quotes or case', () => {
+  for (const [t, secret] of [
+    ['host=core.company.tech', 'core.company'], ['hostname: "edge1.branch.systems"', 'edge1.branch'], ["server = 'vpn.acme-corp.zzz'", 'vpn.acme-corp'],
+    ['HOST :   srv-01.lab.cloudy', 'srv-01.lab'], ['{"endpoint": "api.partner.solutions"}', 'api.partner'], ['remote\t=\tgw1.site.systems', 'gw1.site'],
+    ['fqdn:\n  core.company.tech', 'core.company'], ['proxy=\r\n  p1.edge.zzz', 'p1.edge'], ['Target: DB-MAIN.CORP.XYZ', 'DB-MAIN.CORP'], ['upstream: "a.b.c.d.example"', 'a.b.c'],
+  ]) noLeak(t, [secret]);
+});
+test('hostnames with a known suffix are hidden without any keyword', () => { for (const t of ['connect to web01.corp.local now', 'mail.example.com', 'ping db-main.internal.lan', 'see https://git.company.io/x']) noLeak(t, [t.match(/[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+/)[0].split('.').slice(0, 2).join('.')]); });
+test('the same hostname gets the same placeholder in both forms, and restores', () => {
+  const t = 'host=core.company.tech and later core.company.tech again', r = clean(t); ok(!r.out.includes('core.company'), r.out); eq(r.back, t); eq(new Set(r.out.match(/\[HOST_\d+\]|node-\d+\.example\.net|node-\d+/g)).size, 1, r.out);
+});
+test('words that only look like keywords, and plain versions, are left alone', () => { for (const t of ['version=1.2.3', 'ghost: 1.2.3', 'server: nginx/1.18.0', 'hostname: localhost', 'target=build.sh']) eq(clean(t).out, t); });
 done();
