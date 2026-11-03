@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Cheat Sheet: a Dell OS9 sheet (66 commands) with its own pill, search hint and topic chips. It covers show commands, VLANs (port membership is set from inside the VLAN), VLT, routing and the management route, and configuration, and it feeds Quick answers, All platforms search and hub search. The intro says how to tell OS9 from OS10 with `show version`. The commands were written from Dell's OS9 command set and have not been checked against a real switch.
 - Added Script Repository with the Free IP Finder (Invoke-LabScan) from the supplied older copy. It supports showing the code and copying it for PowerShell, and appears in hub search, the tool switcher and Help. Existing tool sources are retained from main.
 
 - Deep review fixes (finding IDs from docs/reviews/2026-11-03-deep-review.md in brackets):

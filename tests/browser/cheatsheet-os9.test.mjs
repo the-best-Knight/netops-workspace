@@ -1,0 +1,17 @@
+import { session } from './lib.mjs';
+const S = await session();
+await S.load('#practice-ref');
+await S.frame(`d.querySelector('#subVendors [data-v="os9"]') && d.querySelector('#subVendors [data-v="os9"]').click(); return 1;`);
+let info = await S.frame(`const b=d.getElementById('sheetBody'); return { v:d.getElementById('sheetVendor').value, text:b.innerText, pill:d.querySelector('#subVendors [data-v="os9"]').classList.contains('on')||d.querySelector('#subVendors [data-v="os9"]').getAttribute('aria-pressed'), hint:d.getElementById('sheetSearch').placeholder, chips:[...d.querySelectorAll('#topicChips .chip')].map(c=>c.textContent).join('|') };`);
+S.ok('Dell OS9 pill selects the OS9 sheet', info.v === 'os9' && /show interfaces status/.test(info.text) && /write memory/.test(info.text), info.v);
+S.ok('OS9 has its own intro, search hint and topic chips', /OS9/.test(info.text) && /vlt/i.test(info.hint) && /VLT/.test(info.chips), info.hint + ' ' + info.chips);
+await S.frame(`const s=d.getElementById('sheetSearch'); s.value='vlt'; s.dispatchEvent(new Event('input',{bubbles:true})); await new Promise(r=>setTimeout(r,300)); return 1;`);
+info = await S.frame(`return d.getElementById('sheetBody').innerText;`);
+S.ok('searching vlt finds the VLT commands', /show vlt brief/.test(info) && /show vlt mismatch/.test(info));
+await S.frame(`d.getElementById('sheetVendor').value='all'; d.getElementById('sheetVendor').dispatchEvent(new Event('change')); const s=d.getElementById('sheetSearch'); s.value='default gateway'; s.dispatchEvent(new Event('input',{bubbles:true})); await new Promise(r=>setTimeout(r,300)); return 1;`);
+info = await S.frame(`return d.getElementById('sheetBody').innerText;`);
+S.ok('All platforms quick answer includes Dell OS9', /Dell OS9/.test(info) && /show ip management-route/.test(info), info.slice(0, 200));
+await S.load();
+await S.ev(`const e = document.getElementById('homeSearch'); e.value='show vlt brief'; e.dispatchEvent(new Event('input',{bubbles:true})); await new Promise(r=>setTimeout(r,300)); return 1;`);
+S.ok('hub search finds the OS9 command', await S.ev(`return /show vlt brief/.test(document.body.innerText);`));
+S.finish();
