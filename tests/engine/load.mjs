@@ -14,9 +14,9 @@ export function source() {
   const s = html.indexOf(open);
   if (s < 0) throw new Error('Topology Builder block not found in ' + KIT_FILE);
   const block = html.slice(s + open.length, html.indexOf('</script>', s)).replaceAll('<\\/', '</');
-  const start = /var NM=\(?function\(\)\{/.exec(block), at = start ? start.index : -1;
+  const start = /var NM\s*=\s*\(?function\s*\(\)\s*\{/.exec(block), at = start ? start.index : -1;
   if (at < 0) throw new Error('engine start not found');
-  const to = block.indexOf('var NS="http://www.w3.org/2000/svg"', at);
+  const end = /var NS\s*=\s*"http:\/\/www\.w3\.org\/2000\/svg"/.exec(block.slice(at)), to = end ? at + end.index : -1;
   if (to < 0) throw new Error('could not find where the engine ends');
   return cached = block.slice(at, to);
 }
