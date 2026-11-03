@@ -3,6 +3,8 @@ import { session } from './lib.mjs';
 const S = await session();
 const where = () => S.ev(`const a = document.activeElement; const c = a && a.closest && a.closest('.card'); if (!c) return a ? (a.id || a.tagName) : null; const r = c.getBoundingClientRect(); return { id: c.dataset.id, col: Math.round(r.left), row: Math.round(r.top), orphan: c.classList.contains('orphan') };`);
 const key = async (k) => { await S.press(k); await S.wait(130); return where(); };
+// Each card has a pin button after its title, so Left and Right visit title, pin, next title. This presses until focus lands on another card.
+const across = async (k) => { const from = await where(); let at = from; for (let i = 0; i < 2; i++) { at = await key(k); if (!at || at.id !== from.id) break; } return at; };
 const focusCard = (id) => S.ev(`document.querySelector('.card[data-id="${id}"] .card-title').focus(); return 1;`);
 
 for (const [w, h] of [[1500, 950], [900, 800], [420, 800]]) {
@@ -18,13 +20,13 @@ for (const [w, h] of [[1500, 950], [900, 800], [420, 800]]) {
   if (cols.length >= 2) {
     at = await key('ArrowDown'); const below = layout.find((c) => c.id === at.id);
     S.ok(`${w}: Down from the first card goes to the row below, same column`, below && below.top > first.top && below.left === first.left, { at, first, below });
-    at = await key('ArrowRight'); const right = layout.find((c) => c.id === at.id);
+    at = await across('ArrowRight'); const right = layout.find((c) => c.id === at.id);
     S.ok(`${w}: Right moves along the row`, right && right.top === below.top && right.left > below.left, { at, right });
-    at = await key('ArrowLeft'); S.ok(`${w}: Left comes back`, at.id === below.id, at);
+    at = await across('ArrowLeft'); S.ok(`${w}: Left comes back`, at.id === below.id, at);
     at = await key('ArrowUp'); S.ok(`${w}: Up returns to the first card`, at.id === first.id, at);
-    at = await key('ArrowLeft'); S.ok(`${w}: Left at the left edge stays put`, at.id === first.id, at);
+    at = await across('ArrowLeft'); S.ok(`${w}: Left at the left edge stays put`, at.id === first.id, at);
     const lastInRow = byRow[0][byRow[0].length - 1];
-    await focusCard(lastInRow.id); at = await key('ArrowRight'); S.ok(`${w}: Right at the right edge stays put`, at.id === lastInRow.id, at);
+    await focusCard(lastInRow.id); at = await across('ArrowRight'); S.ok(`${w}: Right at the right edge stays put`, at.id === lastInRow.id, at);
     for (const col of cols) {
       const colCards = layout.filter((c) => c.left === col && !c.orphan);
       await focusCard(colCards[0].id); let prev = colCards[0], steps = 0, sideways = 0; const seen = [prev.id];
@@ -47,7 +49,7 @@ for (const [w, h] of [[1500, 950], [900, 800], [420, 800]]) {
   } else {
     at = await key('ArrowDown'); S.ok(`${w}: single column, Down goes to the next card`, at.id === layout[1].id, { at });
     at = await key('ArrowUp'); S.ok(`${w}: single column, Up goes back`, at.id === first.id, at);
-    at = await key('ArrowRight'); S.ok(`${w}: single column, Right does nothing`, at.id === first.id, at);
+    at = await across('ArrowRight'); S.ok(`${w}: single column, Right does nothing`, at.id === first.id, at);
   }
   await focusCard(first.id); at = await key('ArrowUp'); S.ok(`${w}: Up from the top row goes to the search box`, at === 'homeSearch', at);
   at = await key('ArrowDown'); S.ok(`${w}: Down from the empty search box goes to the first card`, at.id === first.id, at);

@@ -1,8 +1,20 @@
 // existing behaviour, security and storage
 import { start, importText, LAB_CFGS, LAB_SESS, shot, SC, wait, press, fxd } from './topology-lib.mjs';
 import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { webcrypto } from 'node:crypto';
 const DL = (process.env.KIT_DL || SC + 'ff/dl').replace(/\/?$/, '/');
 const T = await start(); const { ok, fr, J, ctx } = T;
+// Every file with network details is saved encrypted: pick a method, type a passphrase, press Encrypt and save.
+const PASS = 'correct horse battery staple';
+const chooseMethod = `await new Promise(r => setTimeout(r, 400)); const m = d.querySelector('input[name=encm][value="600000"]'); m.click(); await new Promise(r => setTimeout(r, 150)); d.getElementById('encm-next').click(); await new Promise(r => setTimeout(r, 300));`;
+const typePass = `const p = d.getElementById('enc-pass'), p2 = d.getElementById('enc-pass2'); p.value = ${JSON.stringify(PASS)}; p2.value = ${JSON.stringify(PASS)}; p.dispatchEvent(new w.Event('input', { bubbles: true })); p2.dispatchEvent(new w.Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); d.getElementById('enc-ok').click(); await new Promise(r => setTimeout(r, 1500));`;
+const exportEnc = (k) => fr(`d.querySelector('#exportMenu summary').click(); await new Promise(r => setTimeout(r, 150)); d.querySelector('[data-exp=${k}]').click(); ${chooseMethod} ${typePass} return 1;`);
+const decryptFile = async (path) => {
+  const env = JSON.parse(readFileSync(path, 'utf8')), b = (x) => Buffer.from(x, 'base64');
+  const km = await webcrypto.subtle.importKey('raw', new TextEncoder().encode(PASS), 'PBKDF2', false, ['deriveKey']);
+  const key = await webcrypto.subtle.deriveKey({ name: 'PBKDF2', salt: b(env.salt), iterations: env.iterations, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  return new TextDecoder().decode(await webcrypto.subtle.decrypt({ name: 'AES-GCM', iv: b(env.iv) }, key, b(env.data)));
+};
 const SECRETS = ['LabRO123', '$9$abcdEFGHijklMNOP', '0822455D0A16', '$9$zzzzzzzz', 'Dell-Lab-RO', '$6$abcdefgh', 'n4032-ro', '$5$abcdefgh'];
 
 // ---- hand drawing still works exactly as before ----
@@ -35,9 +47,9 @@ const pan = await J(`return w.__nmx.state().view.ty;`);
 ok('zoom and pan still work', z1 > z0 && typeof pan === 'number', { z0, z1, pan });
 // export the classic file: no network section when there is no network data
 rmSync(DL, { recursive: true, force: true }); 
-await fr(`d.querySelector('#exportMenu summary').click(); await new Promise(r => setTimeout(r, 200)); d.querySelector('[data-exp=json]').click(); await new Promise(r => setTimeout(r, 1200)); return 1;`);
+await exportEnc('json');
 const files = existsSync(DL) ? readdirSync(DL) : [];
-const jf = files.find(f => /topology-.*\.json$/.test(f)); const jt = jf ? JSON.parse(readFileSync(DL + jf, 'utf8')) : null;
+const jf = files.find(f => /topology-.*\.enc$/.test(f)); const jt = jf ? JSON.parse(await decryptFile(DL + jf)) : null;
 ok('a hand-drawn diagram still exports the classic file (version 1, no network section)', jt && jt.version === 1 && jt.format === 'network-topology-builder' && !jt.network && jt.nodes.length === 3, { files, version: jt && jt.version });
 // legacy file opens
 const legacy = { format: 'network-topology-builder', version: 1, nodes: [{ id: 1, kind: 'device', type: 'router', name: 'R-OLD', x: 100, y: 100, ip: '10.0.0.1' }, { id: 2, kind: 'device', type: 'switch', name: 'SW-OLD', x: 400, y: 100 }], links: [{ from: 1, to: 2, label: 'Gi0/1', medium: 'copper', status: 'down' }] };
@@ -71,24 +83,24 @@ const kept = await J(`const x = w.__nmx; const raws = Object.values(x.model().ra
 ok('a copy is kept only when asked for, and its secrets are masked', kept.n === 1 && kept.redactions >= 3 && kept.secrets.length === 0 && kept.has && kept.masked, kept);
 // saving a project that holds a kept copy asks about encryption
 await fr(`d.querySelector('#exportMenu summary').click(); await new Promise(r => setTimeout(r, 200)); d.querySelector('[data-exp=json]').click(); await new Promise(r => setTimeout(r, 600)); return 1;`);
-const encAsk = await J(`const e = d.getElementById('enc'); return { open: e.open, plain: !d.getElementById('enc-plain').classList.contains('hidden'), text: d.getElementById('enc-text').textContent.slice(0, 200) };`);
-ok('saving a project with a kept copy offers a passphrase first', encAsk.open && encAsk.plain, encAsk);
+const encAsk = await J(`const e = d.getElementById('enc-method'); return { open: e.open, text: e.textContent.slice(0, 200) };`);
+ok('saving a project with a kept copy asks how to protect it first', encAsk.open && /encrypted/i.test(encAsk.text), encAsk);
 await shot(ctx, SC + 'nm10-enc.png');
 rmSync(DL, { recursive: true, force: true });
-await fr(`d.getElementById('enc-plain').click(); await new Promise(r => setTimeout(r, 1200)); return 1;`);
+await fr(`${chooseMethod} ${typePass} return 1;`);
 const files2 = existsSync(DL) ? readdirSync(DL) : [];
-const jf2 = files2.find(f => /topology-.*\.json$/.test(f)); const txt2 = jf2 ? readFileSync(DL + jf2, 'utf8') : '';
+const jf2 = files2.find(f => /topology-.*\.enc$/.test(f)); const txt2 = jf2 ? await decryptFile(DL + jf2) : '';
 ok('the saved project holds the model but none of the secrets', jf2 && /"version": ?2/.test(txt2.slice(0, 200)) && !SECRETS.some(s => txt2.indexOf(s) >= 0), { files2, len: txt2.length });
 
 // ---- exports ----
 rmSync(DL, { recursive: true, force: true });
-for (const k of ['net-devices', 'net-ifaces', 'net-vlans', 'net-links', 'net-down', 'net-unres', 'net-health', 'csv', 'svg', 'png-light']) { await fr(`d.querySelector('#exportMenu summary').click(); await new Promise(r => setTimeout(r, 150)); d.querySelector('[data-exp=${k}]').click(); await new Promise(r => setTimeout(r, 700)); return 1;`); }
+for (const k of ['net-devices', 'net-ifaces', 'net-vlans', 'net-links', 'net-down', 'net-unres', 'net-health', 'csv', 'svg', 'png-light']) { if (k === 'svg' || k === 'png-light') await fr(`d.querySelector('#exportMenu summary').click(); await new Promise(r => setTimeout(r, 150)); d.querySelector('[data-exp=${k}]').click(); await new Promise(r => setTimeout(r, 700)); return 1;`); else await exportEnc(k); }
 await wait(1500);
 const exps = existsSync(DL) ? readdirSync(DL) : [];
 const has = (re) => exps.some(f => re.test(f));
-ok('every export is saved (devices, interfaces, VLANs, links, down links, unresolved, health, classic list, SVG, PNG)', has(/network-devices/) && has(/network-interfaces/) && has(/network-vlan-membership/) && has(/network-links/) && has(/network-down-and-disabled-links/) && has(/network-unresolved/) && has(/network-health/) && has(/topology-.*\.csv$/) && has(/\.svg$/) && has(/\.png$/), exps);
-const dev = exps.find(f => /network-devices/.test(f)); const dtxt = dev ? readFileSync(DL + dev, 'utf8') : '';
-ok('the device CSV has a header and one row per device', /^﻿Device,Type,Vendor/.test(dtxt) && dtxt.trim().split(/\r?\n/).length >= 9, dtxt.slice(0, 200));
+ok('every export is saved, encrypted except the pictures (devices, interfaces, VLANs, links, down links, unresolved, health, classic list, SVG, PNG)', has(/network-devices/) && has(/network-interfaces/) && has(/network-vlan-membership/) && has(/network-links/) && has(/network-down-and-disabled-links/) && has(/network-unresolved/) && has(/network-health/) && has(/topology-.*\.csv\.enc$/) && has(/\.svg$/) && has(/\.png$/), exps);
+const dev = exps.find(f => /network-devices/.test(f)); const dtxt = dev ? await decryptFile(DL + dev) : '';
+ok('the device CSV has a header and one row per device', /^\uFEFF?Device,Type,Vendor/.test(dtxt) && dtxt.trim().split(/\r?\n/).length >= 9, dtxt.slice(0, 200));
 const svgf = exps.find(f => /\.svg$/.test(f)); const svgt = svgf ? readFileSync(DL + svgf, 'utf8') : '';
 ok('the SVG picture shows no hover or search highlight and no interface names unless asked', /<svg/.test(svgt) && !/stroke-opacity="0.28"/.test(svgt), svgt.length);
 

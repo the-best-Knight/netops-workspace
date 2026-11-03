@@ -13,7 +13,7 @@ S.ok('a new visitor starts on Dell', first.vendor === 'dell' && first.active ===
 
 for (const v of ['dell', 'cisco']) {
   await setVendor(v);
-  await S.frame(`w.startLab(1); await new Promise(r => setTimeout(r, 500)); w.runConsoleCommand('select SW1'); return 1;`);
+  await S.frame(`w.startLab(1); await new Promise(r => setTimeout(r, 500)); w.runConsoleCommand('select SW1'); w.runConsoleCommand('enable'); return 1;`);
   const isDell = v === 'dell';
   // "?" at the prompt: alphabetical, only exec commands
   const top = await run('?'), t = tokens(top);
@@ -37,7 +37,7 @@ for (const v of ['dell', 'cisco']) {
   S.ok(`${v}: ? in config mode ${isDell ? 'offers management, not vtp' : 'offers vtp, not management'}`, isDell ? cfg.includes('management') && !cfg.includes('vtp') : cfg.includes('vtp') && !cfg.includes('management'), cfg);
   S.ok(`${v}: do ? lists exec commands`, tokens(await run('do ?')).includes('show'), 1);
   S.ok(`${v}: do show ? lists the show subcommands`, tokens(await run('do show ?')).length > 15, 1);
-  await run('interface gi0/1');
+  await run(isDell ? 'interface ethernet 1/1/1' : 'interface gi0/1');
   const ifc = tokens(await run('?'));
   S.ok(`${v}: ? in interface mode lists interface commands only`, ifc.includes('switchport') && ifc.includes('shutdown') && !ifc.includes('hostname') && !ifc.includes('show') && sorted(ifc), ifc);
   S.ok(`${v}: switchport ? is alphabetical`, sorted(tokens(await run('switchport ?'))), 1);
@@ -50,7 +50,7 @@ for (const v of ['dell', 'cisco']) {
     S.ok('dell: show interface has MTU, LineSpeed, Input and Output statistics', /MTU 9216 bytes, IP MTU 1500 bytes/.test(one) && /LineSpeed 1G, Auto-Negotiation on/.test(one) && /Input statistics:/.test(one) && /Output statistics:/.test(one) && /Time since last interface status change/.test(one), one);
     S.ok('dell: show interface has no Cisco-only lines', !/Encapsulation ARPA|BW 1000000 Kbit|Switchport attributes|media type is/.test(one), one);
     const stat = await run('show interface status');
-    S.ok('dell: show interface status uses the OS10 columns', /Port +Description +Status +Speed +Duplex +Mode +Vlan +Tagged-Vlans/.test(stat) && /Eth 1\/1\/2 +up +1G +full +A +10 +-/.test(stat), stat);
+    S.ok('dell: show interface status uses the OS10 columns', /Port +Description +Status +Speed +Duplex +Mode +Vlan +Tagged-Vlans/.test(stat) && /Eth 1\/1\/2 +(\S+ +)?up +1G +full +A +10 +-/.test(stat), stat);
     S.ok('dell: typing show interface (no s) gives no spelling note', !/spells it/.test(stat), stat);
     S.ok('dell: show interfaces (with s) still works but is corrected', /spells it "show interface"/.test(await run('show interfaces status')), 1);
     const desc = await run('show interface description');
@@ -64,7 +64,7 @@ for (const v of ['dell', 'cisco']) {
     const down = await run('show interfaces gi0/1');
     S.ok('cisco: a shut port says administratively down (disabled)', /^GigabitEthernet0\/1 is administratively down, line protocol is down \(disabled\)/.test(down), down.split('\n')[0]);
     const stat = await run('show interfaces status');
-    S.ok('cisco: show interfaces status columns are separated', /Gi0\/2 +connected +10 +a-full +a-1000 10\/100\/1000BaseTX/.test(stat), stat);
+    S.ok('cisco: show interfaces status columns are separated', /Gi0\/2 +(\S+ +)?connected +10 +a-full +a-1000 10\/100\/1000BaseTX/.test(stat), stat);
   }
   // the shadowing bug: these used to print a full per-port dump
   const trunk = await run(isDell ? 'show interface trunk' : 'show interfaces trunk');

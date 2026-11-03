@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Network Fault Lab: switches start in user EXEC mode, so `enable` comes before `configure terminal`, and `?` lists only the commands for the current mode. Dell switches take Dell port names (`interface ethernet 1/1/1`), and the PCs answer `ping` in the Linux format.
+- Network Fault Lab: when a ticket's goal is met, run the test shown under the goal, then press Verify your repair to reach the quiz.
+- Main menu: each card has a pin button after its title. Left and Right visit the title, the pin, then the next card.
+- Network Topology Builder: everything saved with network details is encrypted and asks for a passphrase first, including the project file, the CSV lists and the health report. The PNG and SVG pictures are not encrypted.
 - Main menu: the arrow keys now follow the layout. Down and Up move between rows in the same column, Left and Right move along the row, and Up from the top row goes back to the search box. Before, Down and Right both stepped to the next card in list order, so Down jumped sideways first.
 - Network Fault Lab: Dell is now the default vendor for new visitors (anyone who already chose one keeps it).
 - Network Fault Lab: `?` now works like a real switch. It lists the commands for the current mode (EXEC, configuration, interface, access list) in alphabetical order with a short description, and `show ?` and `do show ?` list what can follow. The list follows the chosen vendor: Cisco shows `show interfaces`, `cdp` and `etherchannel`, Dell shows `show interface` and `port-channel`. `help` still prints the full guide.
