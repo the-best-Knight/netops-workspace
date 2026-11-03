@@ -4716,8 +4716,15 @@ __KIT_BASE__ :root{--navy-900: var(--kit-page);--navy-850: var(--kit-s2);--navy-
 <input type="file" id="secretsFileInput" accept=".enc,.txt,.json" style="display:none" onchange="loadSecretsFile(this)">
 
 <script>
+// Log Sanitizer: hides secrets in pasted text so it can be shared safely, and puts them back afterwards.
+// How it works: rules (SANITIZATION_RULES) find IPs, hostnames, usernames, passwords, API keys and so on.
+// Each value gets a consistent placeholder, and a session remembers original <-> placeholder so Restore can undo it.
+// Example: 'host: 192.168.1.104:8089' becomes 'host: 192.0.2.104:8089', and 'password: Password1234' becomes
+// 'password: [SECRET_2]'. The same input always gets the same placeholder, so the result still reads like a config.
+// Nothing leaves the page: there is no network code in this file.
 var TOOL_VERSION = "130.0", TOOL_MAINTAINER = "Ian Knight", TOKEN_TYPES = ["SECRET", "ID", "TERM"], LEGACY_TYPES = ["ID", "PATH", "HOST", "SECRET", "IP", "MAC", "USER", "EMAIL", "TERM"], TOKEN_LABELS = LEGACY_TYPES.concat(["PEM_KEY", "JWT", "AWS_KEY", "AZURE_KEY", "GCP_TOKEN", "GITHUB_TOKEN", "GITLAB_TOKEN", "SLACK_TOKEN", "STRIPE_KEY", "API_KEY", "GOOGLE_KEY", "NPM_TOKEN", "DOCKER_TOKEN", "TAILSCALE_KEY", "AUTH_HEADER", "COOKIE", "URL_CREDS", "CISCO_SECRET", "CRYPT_HASH", "CARD", "SSN", "SID", "LUN", "VMFS_ID", "UUID", "HASH", "ENTROPY"]), TOKEN_PATTERN = "(?:<|\\[)(?:" + TOKEN_LABELS.join("|") + ")_\\d+(?:>|\\])", TOKEN_FIND_RE = new RegExp(TOKEN_PATTERN, "g"), currentSanitizedText = "", currentRestoredText = "", LIVE_LIMIT = 4e5, IDLE_LOCK_MINUTES = 5, idleLockTimer = null, CLIPBOARD_CLEAR_SECONDS = 15, mapPanelUnlocked = false, revealedOriginals = /* @__PURE__ */ new Set(), dictActive = false, dictEditing = null, dictRevealAll = false, dictError = "", dictFocusRow = -1, sanitizedOutputEverShared = false;
 var idleOverlay = null, idleInerted = [], idleReturnFocus = null;
+// Covers the page with a lock screen after the idle timeout, so secrets on screen are not left open.
 function lockIdle() {
   var b = document.body;
   if (!b || b.classList.contains("idle-locked")) return;
@@ -4814,6 +4821,8 @@ function registerTokenLabel(name) {
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+// True when a 13 to 19 digit number passes the Luhn checksum, which separates card numbers from other long numbers.
+// Example: 4111 1111 1111 1111 passes. A run of the same digit never does.
 function luhnValid(raw) {
   var digits = raw.replace(/[^0-9]/g, "");
   if (digits.length < 13 || digits.length > 19 || /^(\d)\1+$/.test(digits)) return false;
@@ -4831,6 +4840,7 @@ function isTimestampDigits(d) {
 function cardAccept(raw) {
   return luhnValid(raw) && !isTimestampDigits(raw.replace(/[^0-9]/g, ""));
 }
+// How random a string looks, in bits per character. Keys and tokens score high, ordinary words score low.
 function shannonEntropy(str) {
   for (var freq = /* @__PURE__ */ Object.create(null), i = 0; i < str.length; i++) freq[str[i]] = (freq[str[i]] || 0) + 1;
   var H = 0;
@@ -4840,6 +4850,7 @@ function shannonEntropy(str) {
   }
   return H;
 }
+// One working session: maps from each original value to its placeholder and back, plus the manual redactions.
 function createSession() {
   return { map: /* @__PURE__ */ new Map(), tokRev: /* @__PURE__ */ new Map(), synRev: /* @__PURE__ */ new Map(), synths: [], manual: [], kept: /* @__PURE__ */ new Map(), counters: /* @__PURE__ */ Object.create(null), lastAuto: /* @__PURE__ */ Object.create(null) };
 }
@@ -4998,6 +5009,8 @@ function pathUserAlias(ctx, name, idx) {
   var hit = ctx.session.map.get(name);
   return hit ? hit.replacement : replacementFor(ctx, name, "USER", null, false);
 }
+// Picks a believable fake value for a real one, of the same type.
+// IPs from one real subnet go into one reserved documentation block (192.0.2.x, 198.51.100.x, 203.0.113.x, 198.18.x), so the layout of the network still makes sense.
 function makeSynthetic(original, type, idx, ctx) {
   if (type === "IP") {
     var blocks = subnetBlocks(ctx.session), v6 = original.indexOf(":") !== -1, skey = ipSubnetKey(original), blk = blocks.by.get(skey);
@@ -5558,6 +5571,7 @@ var SYSTEM_PATH_RE = /^\/(?:etc|var|opt|usr|bin|sbin|sys|proc|run|tmp|root|dev|l
 function entropyAccept(val) {
   return SYSTEM_PATH_RE.test(val) && !/^\/dev\/disk\//.test(val) || isGenericNasPath(val) || !/[A-Za-z]/.test(val) || !/[0-9]/.test(val) || /^[0-9a-fA-F]+$/.test(val) ? false : shannonEntropy(val) >= 4;
 }
+// The built-in rules. Each has an id, a description, a type (SECRET, HOST, USER, IP ...) and a regex that finds that kind of value.
 var SANITIZATION_RULES = [{ id: "pem", desc: "PEM / Private Key Blocks", type: "SECRET", label: "PEM_KEY", always: true, regex: /-----BEGIN [A-Z0-9 ]+-----[\s\S]+?-----END [A-Z0-9 ]+-----/g }, { id: "jwt", desc: "JWTs", type: "SECRET", label: "JWT", always: true, regex: /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}(?![A-Za-z0-9_-])/g }, { id: "aws", desc: "AWS Keys", type: "SECRET", label: "AWS_KEY", always: true, regex: /\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b/g }, { id: "azure", desc: "Azure Keys & SAS", type: "SECRET", label: "AZURE_KEY", always: true, regex: /\b(?:AccountKey|SharedAccessSignature|sig)=[a-zA-Z0-9+/=]{40,}/g }, { id: "gcp", desc: "GCP Tokens", type: "SECRET", label: "GCP_TOKEN", always: true, regex: /\bya29\.[a-zA-Z0-9_-]{20,}(?![a-zA-Z0-9_-])/g }, { id: "github", desc: "GitHub Tokens", type: "SECRET", label: "GITHUB_TOKEN", always: true, regex: /\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g }, { id: "gitlab", desc: "GitLab Tokens", type: "SECRET", label: "GITLAB_TOKEN", always: true, regex: /\bglpat-[A-Za-z0-9_-]{15,}(?![A-Za-z0-9_-])/g }, { id: "slack", desc: "Slack Tokens", type: "SECRET", label: "SLACK_TOKEN", always: true, regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}(?![A-Za-z0-9-])/g }, { id: "stripe", desc: "Stripe Keys", type: "SECRET", label: "STRIPE_KEY", always: true, regex: /\b[sp]k_(?:live|test)_[A-Za-z0-9]{16,}\b/g }, { id: "genkey", desc: "Generic sk- API Keys", type: "SECRET", label: "API_KEY", always: true, regex: /\bsk-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g }, { id: "google", desc: "Google API Keys", type: "SECRET", label: "GOOGLE_KEY", always: true, regex: /\bAIza[0-9A-Za-z_-]{30,}(?![0-9A-Za-z_-])/g }, { id: "npmtok", desc: "npm Tokens", type: "SECRET", label: "NPM_TOKEN", always: true, regex: /\bnpm_[A-Za-z0-9]{30,}\b/g }, { id: "dockertok", desc: "Docker Hub Tokens", type: "SECRET", label: "DOCKER_TOKEN", always: true, regex: /\bdckr_pat_[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g }, { id: "tailscale", desc: "Tailscale Auth Keys", type: "SECRET", label: "TAILSCALE_KEY", always: true, regex: /\btskey-[A-Za-z0-9-]{10,}(?![A-Za-z0-9-])/g }, { id: "authheader", desc: "Auth Headers", type: "SECRET", label: "AUTH_HEADER", always: true, regex: /\b(?:Authorization|Proxy-Authorization)["']?\s*:\s*["']?(?:(?:Bearer|Basic|Token|ApiKey|Digest)\s+)?([^\s\r\n"']+)/gi, group: 1, accept: notSchemeWord }, { id: "cookie", desc: "Cookie Headers", type: "SECRET", label: "COOKIE", always: true, regex: /\b(?:Cookie|Set-Cookie)\s*:\s*([^\r\n]+)/gi, group: 1 }, { id: "urlcreds", desc: "Credentials in URLs (user:pass split into USER+SECRET)", type: "SECRET", label: "URL_CREDS", always: true, regex: /:\/\/([^\s\/:@]*:[^\s\/@]+)@/g, group: 1 }, { id: "kvsecret", desc: "Key-value Secrets", type: "SECRET", always: true, regex: /["']?(?:[A-Za-z0-9_.-]*(?:pass(?:word|wd)?|pwd|secret|token|apikey|passphrase|credentials?|psk)|[A-Za-z0-9_.-]*[_-]key|(?<![A-Za-z0-9])key|(?<![A-Za-z0-9])pw)["']?\s*[:=]\s*("(?:[^"\\\r\n]|\\.)*"|"[^"\r\n]*"|'(?:[^'\\\r\n]|\\.)*'|'[^'\r\n]*'|[^\s\r\n,;'"]+)/gi, group: 1, accept: function(v) {
   if (/^(?:\/|~\/|[A-Za-z]:\\)/.test(v) || /^ConvertTo-SecureString$/i.test(v)) return false;
   var core = v.replace(/^(["'])(.*)\1$/, "$2").replace(/(?:\\[nrt])+$/, "");
@@ -5777,6 +5791,8 @@ function propagateSecrets(text, ctx) {
     return b.length - a.length;
   }), applyRule(text, ctx, new RegExp(trieSource(list.slice(0, 500)), "g"), "SECRET");
 }
+// Main entry point. Runs the format pass, then the rules and your own terms, and returns the sanitized text.
+// Example: a line 'password: hunter2' comes back as 'password: [SECRET_1]' (the number depends on how many secrets came before).
 function sanitizeText(text, opts, session2) {
   var ctx = { session: session2, whitelist: opts.whitelist, replacements: 0, sourceText: text };
   if (applyMemoryToSession(session2), text = runStructuredFormatPass(text, ctx, opts), session2.manual.length) {
@@ -5851,6 +5867,7 @@ function sanitizeText(text, opts, session2) {
 function serializeRule(r) {
   return { p: String(r.pattern), t: String(r.type), g: r.group == null ? null : r.group, i: !!r.ignoreCase, on: r.enabled !== false };
 }
+// Builds the dictionary (original -> placeholder -> type) that Restore needs. The page encrypts it before saving it.
 function exportMappingData(session2, customRules2) {
   var entries = [];
   return session2.map.forEach(function(meta, original) {
@@ -6013,6 +6030,7 @@ function reapplyKnown(text, session2) {
     return by.has(m) ? by.get(m) : m;
   }) : text;
 }
+// Checks that putting the real values back into a reply gives exactly what was hidden, and reports anything that does not match.
 function verifyRestore(aiText, restoredText, opts, session2) {
   var probe = { customTerms: [], whitelist: /* @__PURE__ */ new Set(), customRules: [], b64: false };
   for (var k in opts || {}) probe[k] = opts[k];
@@ -10107,6 +10125,9 @@ __KIT_BASE__ :root{--navy-900: var(--kit-page);--navy-850: var(--kit-s2);--navy-
 <div id="toast-container" role="status" aria-live="polite"></div>
 
 <script>
+// Network Calculator: subnet, IPv6, VLSM, supernet, split, conflict checker, binary, converters, bandwidth, ACL builder and hash verifier.
+// Everything is calculated in the page. Example: 192.168.10.25 with /25 gives network 192.168.10.0, broadcast 192.168.10.127,
+// first usable 192.168.10.1, last usable 192.168.10.126 and 126 usable hosts.
 var TOOL_VERSION = "1.3", TOOL_MAINTAINER = "Ian Knight";
 function $(id) {
   return document.getElementById(id);
@@ -10142,6 +10163,8 @@ function fallbackCopy(val) {
     showToast("Copy failed.", "error");
   }
 }
+// Reads a dotted IPv4 address into a number, or returns null when it is not valid.
+// Example: parseIp('192.168.01.1') is null, because a leading zero is not allowed.
 function parseIp(str) {
   if (!str) return null;
   str = str.trim();
@@ -10170,6 +10193,8 @@ function aclFail(m) {
 function ipToStr(n) {
   return n = n >>> 0, (n >>> 24 & 255) + "." + (n >>> 16 & 255) + "." + (n >>> 8 & 255) + "." + (n & 255);
 }
+// Reads '/24', '24' or a dotted mask like 255.255.255.0 as a prefix length. Returns null when it is not valid.
+// Example: parsePrefixOrMask('/24') is 24, and '/33' is null.
 function parsePrefixOrMask(str) {
   if (!str) return null;
   if (str = str.trim().replace(/^\//, ""), /^\d{1,2}$/.test(str)) {
@@ -10187,6 +10212,7 @@ function parsePrefixOrMask(str) {
 function prefixToMask(p) {
   return p === 0 ? 0 : 4294967295 << 32 - p >>> 0;
 }
+// Usable hosts for a prefix length. Example: /24 gives 254, /31 gives 2 (point to point) and /32 gives 1.
 function hostCount(prefix) {
   return prefix >= 31 ? prefix === 31 ? 2 : 1 : Math.pow(2, 32 - prefix) - 2;
 }
@@ -10224,6 +10250,8 @@ function clearCalc() {
 function calcFail(m) {
   $("summaryCards").style.display = "none", $("detailPanel").style.display = "none", $("calcSummary").textContent = m, $("sbStatus").textContent = "Check the input", showToast(m, "error");
 }
+// Subnet Calc: reads the IP and mask boxes (an IP written as 192.168.10.25/26 is split for you) and fills the results.
+// An IPv6 address is handed to the IPv6 tab.
 function runCalc() {
   var ipStr = $("ipAddr").value.trim(), prefStr = $("prefixOrMask").value.trim();
   var cm = /^(\d{1,3}(?:\.\d{1,3}){3})\s*\/\s*(\d{1,2})$/.exec(ipStr);
@@ -10261,11 +10289,13 @@ function addVlsmRow() {
   var row = document.createElement("div");
   row.className = "vlsm-row", row.innerHTML = '<input type="text" placeholder="Name" class="vlsm-name" aria-label="Subnet name"><input type="number" min="1" placeholder="Hosts needed" class="vlsm-hosts" aria-label="Hosts needed"><span class="panel-note" style="font-size:11px">hosts</span><button class="btn quiet" type="button" aria-label="Remove subnet" onclick="this.parentElement.remove()">\u2715</button>', $("vlsmRows").appendChild(row);
 }
+// Smallest block that fits a number of hosts. Example: 50 hosts needs /26 (62 usable). Two hosts or fewer gives /30.
 function neededPrefix(hosts) {
   if (hosts <= 2) return 30;
   var bits = Math.ceil(Math.log2(hosts + 2));
   return 32 - bits;
 }
+// VLSM Planner: plans subnets inside a parent block such as 10.0.0.0/16, one for each row of hosts needed.
 function runVlsm() {
   var parentStr = $("vlsmParent").value.trim(), m = parentStr.match(/^(.+)\/(\d{1,2})$/);
   if (!m) {
@@ -13326,6 +13356,9 @@ html:root .tabs {
   </div>
 
 <script>
+// Cheat Sheet: copy-ready commands for PowerShell, switches, Linux and VMware, plus ports, terms and error messages.
+// Click a command to copy it. The search scores each row against the words typed, so 'dns' or 'gateway' finds the right command.
+// The data tables (KIT_DATA, SWITCH_CHEAT, TOPICS) are defined in this script; the functions search and draw them.
 function $(id) {
   return document.getElementById(id);
 }
@@ -13473,6 +13506,7 @@ function singular(w) {
   return w.length > 3 && w.charAt(w.length - 1) === "s" ? w.slice(0, -1) : w;
 }
 var sheetPhrase = "";
+// Scores how well one row matches the search words. 0 means no match, and a higher score sorts first.
 function scoreRow(r, tokens) {
   if (!tokens.length) return 1;
   for (var intent = String(r.intent || "").toLowerCase(), blob = rowSearchBlob(r), score = 0, i = 0; i < tokens.length; i++) {
@@ -13502,6 +13536,7 @@ function copyCmdFallback(text) {
     return false;
   }
 }
+// Copies a command to the clipboard and shows a short 'copied' note.
 function copyCmd(text, env) {
   if (!noCmd(text)) {
     var done = function() {
@@ -13583,6 +13618,7 @@ var ENV_NAME = { ps: "Windows PowerShell", cmd: "Windows CMD", dell: "Dell OS10"
 function sheetsMap() {
   return { ps: PS_CHEAT, cmd: KIT_DATA.cmdCheat, dell: SWITCH_CHEAT, cisco: SWITCH_CHEAT, junos: KIT_DATA.junosCheat, linux: KIT_DATA.linuxCheat, proxmox: KIT_DATA.proxmoxCheat, esxi: KIT_DATA.esxiCheat, nsx: KIT_DATA.nsxCheat, vxrail: KIT_DATA.vxrailCheat };
 }
+// Searches each block of the chosen sheet and returns the rows that match.
 function findRows(v, tokens) {
   var seen = {}, found = [];
   (sheetsMap()[v] || []).forEach(function(block, bi) {
@@ -17358,8 +17394,14 @@ dialog.nm-dlg {
   border-color: var(--accent);
 }
 </style><script>
+// Network Topology Builder: draw a network by hand, or build it from the output your devices print.
+// Export as PNG, SVG, draw.io, JSON or CSV. Everything with network details is saved encrypted.
+// Example: paste the 'show cdp neighbors' and 'show vlan' output of two switches and the cables and VLANs appear.
 (function() {
   "use strict";
+  // THE ENGINE. Reads configs and show output from switches, routers, firewalls, ESXi hosts, Linux servers and Windows PCs
+  // into a model of devices, interfaces, VLANs and links. It uses no browser features, so tests/engine runs this same code in Node.
+  // Links are only drawn from evidence: a neighbour table seen from both ends is confirmed, from one end it is inferred.
   var NM = (function() {
     "use strict";
     var NM2 = { parsers: [], version: 1 };
@@ -19271,6 +19313,7 @@ dialog.nm-dlg {
       }
       return sec;
     }
+    // Reads one pasted text or file into the model. Example: a 'show cdp neighbors' table gives links, and 'ipconfig /all' gives a Windows host.
     NM2.parseInput = function(input, base) {
       var out = [], file = input.name || "pasted text", parts;
       try {
@@ -21196,6 +21239,7 @@ dialog.nm-dlg {
       }), out;
     };
   })(NM);
+  // THE DRAWING CODE. Everything above this line is the engine; everything below draws the canvas, panels and menus.
   var NS = "http://www.w3.org/2000/svg", FONT = 'Inter,system-ui,"Segoe UI",sans-serif', MONO = "ui-monospace,Consolas,monospace", GRID = 20, DEV_W = 152, DEV_H = 56, ZONE_HEAD = 26, MAX_NODES = 1500, MAX_LINKS = 4e3, MAX_FILE = 80 * 1024 * 1024, CFG_MAX = 3e5, CFG_TOTAL = 3e6, BEND_MAX = 400, CATS = { core: { label: "Core / Router", dark: "#4ea1ff", light: "#1d6fd6" }, access: { label: "Access / Switch", dark: "#3ecf8e", light: "#178a58" }, security: { label: "Firewall", dark: "#f07178", light: "#cf3c46" }, compute: { label: "Server / Host / VM", dark: "#a78bfa", light: "#6a4bd6" }, other: { label: "Other", dark: "#9aa8b6", light: "#5b6b7a" }, mgmt: { label: "Management", dark: "#3ecf8e", light: "#178a58" } }, TYPES = { cloud: { label: "Internet / Cloud", abbr: "Internet", cat: "other" }, router: { label: "Router", abbr: "RTR", cat: "core" }, firewall: { label: "Firewall", abbr: "FW", cat: "security" }, core: { label: "Core switch", abbr: "CORE", cat: "core" }, switch: { label: "Switch", abbr: "SW", cat: "access" }, lb: { label: "Load balancer", abbr: "LB", cat: "core" }, server: { label: "Server", abbr: "SRV", cat: "compute" }, host: { label: "Host", abbr: "HOST", cat: "compute" }, vm: { label: "VM", abbr: "VM", cat: "compute" }, esxi: { label: "ESXi host", abbr: "ESX", cat: "compute" }, bmc: { label: "iDRAC / iLO", abbr: "BMC", cat: "mgmt" }, mgmt: { label: "Management device", abbr: "MGMT", cat: "mgmt" }, storage: { label: "Storage", abbr: "SAN", cat: "compute" }, client: { label: "Client / PC", abbr: "PC", cat: "other" }, custom: { label: "Custom box", abbr: "NODE", cat: "other" } }, ICONS = { cloud: "M6.5 18.5a4.5 4.5 0 0 1-.5-8.97 6 6 0 0 1 11.6-1.3A4.8 4.8 0 0 1 17.5 18.5z", router: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7v10 M7 12h10 M9 9.5l3-2.5 3 2.5 M9 14.5l3 2.5 3-2.5 M9.5 9l-2.5 3 2.5 3 M14.5 9l2.5 3-2.5 3", firewall: "M3 5h18v14H3z M3 9.7h18 M3 14.3h18 M9 5v4.7 M15 5v4.7 M6 9.7v4.6 M12 9.7v4.6 M18 9.7v4.6 M9 14.3V19 M15 14.3V19", core: "M3 5h18v6H3z M3 13h18v6H3z M6.5 8h.01 M6.5 16h.01 M10 8h8 M10 16h8", switch: "M3 7h18v10H3z M6.5 10h9 M13 8l2.5 2-2.5 2 M17.5 14h-9 M11 12l-2.5 2 2.5 2", lb: "M3 12h5 M8 12l8-6 M8 12h8 M8 12l8 6 M16 6h5 M16 12h5 M16 18h5", server: "M4 4h16v7H4z M4 13h16v7H4z M7.5 7.5h.01 M7.5 16.5h.01 M11 7.5h6 M11 16.5h6", host: "M7 7h10v10H7z M10 10h4v4h-4z M9 3v4 M15 3v4 M9 17v4 M15 17v4 M3 9h4 M3 15h4 M17 9h4 M17 15h4", vm: "M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5 M12 12v9 M12 12L4 7.5", esxi: "M4 3h16v5H4z M4 10h16v5H4z M4 17h16v4H4z M7 5.5h.01 M7 12.5h.01 M11 5.5h6 M11 12.5h6", bmc: "M4 5h16v11H4z M9 20h6 M12 16v4 M12 7.5v4 M9.5 9a3.5 3.5 0 1 0 5 0", mgmt: "M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z M12 3v2.5 M12 18.5V21 M3 12h2.5 M18.5 12H21 M5.6 5.6l1.8 1.8 M16.6 16.6l1.8 1.8 M5.6 18.4l1.8-1.8 M16.6 7.4l1.8-1.8", storage: "M5 6c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3z M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6 M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3", client: "M3 5h18v11H3z M9 20h6 M12 16v4", custom: "M4 4h16v16H4z M8 9h8 M8 13h5" }, MEDIA = { copper: { label: "Copper (Ethernet)", width: 2, dash: "" }, fiber: { label: "Fiber", width: 3.5, dash: "" }, wan: { label: "WAN / carrier", width: 2.5, dash: "10 6" }, wireless: { label: "Wireless", width: 3, dash: "1 7" } }, THEMES = { dark: { bg: "#212124", card: "#2f2f33", text: "#f5f5f7", sub: "#bcbcc4", mut: "#a2a2aa", link: "#8e8e96", bad: "#ec8a84", accent: "#66a5f6", zone: "rgba(255,255,255,.035)", zoneHead: "rgba(255,255,255,.05)", zoneLine: "#4a4a50", halo: "#212124", grid: "#2c2c30", dot: "#45454b", col: "dark" }, light: { bg: "#ffffff", card: "#f4f7fa", text: "#0b0f14", sub: "#4a5968", mut: "#5b6b7a", link: "#6b7a8a", bad: "#cf3c46", accent: "#1d6fd6", zone: "rgba(11,15,20,.04)", zoneHead: "rgba(11,15,20,.05)", zoneLine: "#aab6c3", halo: "#ffffff", grid: "#e6ebf0", dot: "#cfd6dd", col: "light" }, stone: { bg: "#d9d6d1", card: "#ece9e5", text: "#1d1b19", sub: "#46423e", mut: "#5c5752", link: "#7a746d", bad: "#b3261e", accent: "#1f55c4", zone: "rgba(29,27,25,.05)", zoneHead: "rgba(29,27,25,.07)", zoneLine: "#aaa59e", halo: "#d9d6d1", grid: "#cbc7c1", dot: "#b4afa8", col: "light" } };
   function screenTheme() {
     return THEMES[document.documentElement.getAttribute("data-theme") === "light" ? "stone" : "dark"];
@@ -25469,6 +25513,7 @@ dialog.nm-dlg {
       }), d.showModal(), d.querySelector("input[name=encm]").focus();
     });
   }
+  // Saves a file. Anything that holds network details is always encrypted (AES-GCM, key from the passphrase with PBKDF2): you pick a method, then a passphrase.
   function saveFile(o) {
     if (!(window.crypto && crypto.subtle)) {
       toast("This browser cannot encrypt here, so nothing was saved. Use a current Chrome, Edge or Firefox.", null, null, true);
@@ -25605,6 +25650,7 @@ dialog.nm-dlg {
 `) + `\r
 `;
   }
+  // Checks a loaded diagram file before use: unknown fields are dropped and every number is clamped to a safe range.
   function sanitize(d) {
     if (!d || typeof d != "object") return null;
     var raw = Array.isArray(d.nodes) ? d.nodes : Array.isArray(d.devices) ? d.devices : null;
@@ -28801,6 +28847,9 @@ SOA     Start of authority</div>
 </div>
 
 <style id="wfStyle">.walk-found{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 14px;border:1px solid var(--ok);border-left-width:3px;border-radius:14px;background:var(--panel);color:var(--text);font-size:13.5px}.tab.has-dot::after{content:"";display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:50%;background:var(--ok)}</style><script>
+// DNS Lab: an offline DNS simulator for practice. The zone (BASE_ZONE) is a small made-up domain.
+// Look up names the way dig would, break records on purpose in the zone editor, and watch the path a query takes.
+// Example: looking up www.lab.local with type A shows each step the query takes, from the stub resolver onwards.
 const BASE_ZONE = [{ name: "lab.local.", ttl: 3600, type: "SOA", data: "ns1.lab.local. admin.lab.local. 2026031701 7200 3600 1209600 300" }, { name: "lab.local.", ttl: 3600, type: "NS", data: "ns1.lab.local." }, { name: "lab.local.", ttl: 3600, type: "NS", data: "ns2.lab.local." }, { name: "lab.local.", ttl: 3600, type: "MX", data: "10 mail.lab.local." }, { name: "lab.local.", ttl: 3600, type: "TXT", data: '"v=spf1 mx -all"' }, { name: "ns1.lab.local.", ttl: 3600, type: "A", data: "10.0.0.53" }, { name: "ns2.lab.local.", ttl: 3600, type: "A", data: "10.0.0.54" }, { name: "mail.lab.local.", ttl: 300, type: "A", data: "10.0.1.25" }, { name: "www.lab.local.", ttl: 300, type: "CNAME", data: "app.lab.local." }, { name: "app.lab.local.", ttl: 300, type: "A", data: "10.0.1.10" }, { name: "app.lab.local.", ttl: 300, type: "AAAA", data: "2001:db8:1::10" }, { name: "api.lab.local.", ttl: 300, type: "A", data: "10.0.1.20" }, { name: "db.lab.local.", ttl: 300, type: "A", data: "10.0.2.5" }, { name: "vpn.lab.local.", ttl: 300, type: "A", data: "10.0.0.2" }, { name: "1.0.0.10.in-addr.arpa.", ttl: 300, type: "PTR", data: "gateway.lab.local." }, { name: "10.1.0.10.in-addr.arpa.", ttl: 300, type: "PTR", data: "app.lab.local." }, { name: "dc1.lab.local.", ttl: 3600, type: "A", data: "10.0.0.10" }, { name: "_ldap._tcp.lab.local.", ttl: 600, type: "SRV", data: "0 100 389 dc1.lab.local." }, { name: "_kerberos._tcp.lab.local.", ttl: 600, type: "SRV", data: "0 100 88 dc1.lab.local." }, { name: "gateway.lab.local.", ttl: 300, type: "A", data: "10.0.0.1" }];
 let zone = JSON.parse(JSON.stringify(BASE_ZONE)), lastPath = [], queryLog = [], authDown = false;
 const SCENARIOS = [{ id: "cname-loop", title: "CNAME loop", body: "www points at app, app points back at www. Lookups never finish cleanly.", hint: "Query www.lab.local and open the Zone database tab. Follow the CNAME chain by hand: does it ever reach a record with an actual A/AAAA answer, or does it point back to something you already visited?", apply() {
@@ -28869,6 +28918,8 @@ function nameBad(n) {
 function shorten(t) {
   return t.length > 40 ? t.slice(0, 40) + "..." : t;
 }
+// Returns a plain-English reason a name cannot be looked up, or an empty string when it is fine.
+// Example: 999.1.1.1 is reported as not a valid IPv4 address.
 function nameProblem(raw) {
   const n = String(raw || "").trim();
   if (!n) return "Enter a name to look up, like www.lab.local.";
@@ -28893,9 +28944,11 @@ function additional(answers) {
   });
   return out;
 }
+// Returns the zone records for a name and type. The type ANY matches every type.
 function findRecords(name, type) {
   return zone.filter((r) => r.name === name && (type === "ANY" || r.type === type));
 }
+// Answers one lookup the way a resolver would. Every step is added to 'path', which draws the diagram.
 function query(name, type, mode, follow) {
   const path = [], nm = fqdn(name), raw = (name || "").trim(), known = inLab(nm);
   const done = (o) => (lastPath = path, Object.assign({ answers: [], path, name: nm, type, nodata: false, neg: false, rcode: "NOERROR" }, o));
@@ -30032,6 +30085,8 @@ html:root .tabs {
 </div>
 
 <style id="wfStyle">.walk-found{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 14px;border:1px solid var(--ok);border-left-width:3px;border-radius:14px;background:var(--panel);color:var(--text);font-size:13.5px}.tab.has-dot::after{content:"";display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:50%;background:var(--ok)}</style><script>
+// Routing Lab: practice how routers pick a route. The routing tables are made up and nothing is sent anywhere.
+// Example: a packet for 10.1.2.3 matches both 10.1.0.0/16 and 0.0.0.0/0. The /16 wins because the longest prefix wins.
 function escapeHtml(t) {
   return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -30040,6 +30095,7 @@ function ipToInt(ip) {
   const p = ip.trim().split(".").map(Number);
   return p.length !== 4 || p.some((n) => isNaN(n) || n < 0 || n > 255) ? null : (p[0] << 24 >>> 0) + (p[1] << 16 >>> 0) + (p[2] << 8 >>> 0) + (p[3] >>> 0);
 }
+// True when an IP address falls inside a CIDR block. Example: matchPrefix('10.1.2.3', '10.1.0.0/16') is true.
 function matchPrefix(ip, cidr) {
   const [net, bitsS] = cidr.split("/"), bits = +bitsS, a = ipToInt(ip), b = ipToInt(net);
   if (a === null || b === null || !/^\d{1,2}$/.test(bitsS) || bits > 32) return false;
@@ -30060,6 +30116,7 @@ function badHop(router, hop, conn) {
   return hop + (e ? " is the " + e + " address of " + conn.net + ", so no device can use it. " : " is on " + conn.net + ", but no router there has that address. ") + "The next hop must be a neighbor router, like " + NEIGH[router].join(" or ") + ".";
 }
 let tables = JSON.parse(JSON.stringify(BASE));
+// Picks the route a router would use: longest prefix first, then the lowest administrative distance (ad), then the lowest metric.
 function bestRoute(router, dest) {
   const matches = (tables[router] || []).filter((r) => matchPrefix(dest, r.net));
   return matches.length ? (matches.sort((a, b) => {
@@ -30133,6 +30190,7 @@ function renderPathDiagram(hops, finalOk, finalBad) {
     link && link.classList.add("on");
   }
 }
+// Follows a packet hop by hop from a router to its destination, using bestRoute at each hop. Stops on a loop or a dead end.
 function tracePath(from, dest) {
   let r = from;
   const steps = [], hops = [], seen = /* @__PURE__ */ new Set(), d = ipToInt(dest);
@@ -31176,6 +31234,8 @@ Real firewalls often track state; the order principle still matters.</div>
 </div>
 
 <style id="wfStyle">.walk-found{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 14px;border:1px solid var(--ok);border-left-width:3px;border-radius:14px;background:var(--panel);color:var(--text);font-size:13.5px}.tab.has-dot::after{content:"";display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:50%;background:var(--ok)}</style><script>
+// Firewall Rules Lab: practice reading and fixing a rule list. Rules are checked top to bottom and the first match wins.
+// Example: a packet is allowed or blocked by the first rule whose protocol, source and destination all match it.
 function escapeHtml(t) {
   return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -31184,6 +31244,7 @@ function ipToInt(ip) {
   const p = ip.trim().split(".").map(Number);
   return p.length !== 4 || p.some((n) => isNaN(n) || n < 0 || n > 255) ? null : (p[0] << 24 >>> 0) + (p[1] << 16 >>> 0) + (p[2] << 8 >>> 0) + (p[3] >>> 0);
 }
+// True when an IP is inside a CIDR block. 'any' and 0.0.0.0/0 match everything.
 function inCidr(ip, cidr) {
   if (!cidr || cidr === "any" || cidr === "0.0.0.0/0") return true;
   const [net, bitsS] = String(cidr).split("/"), bits = bitsS === void 0 ? 32 : +bitsS, a = ipToInt(ip), b = ipToInt(net);
@@ -31276,6 +31337,7 @@ function comboCover(rs, j) {
   }
   return first < j ? { first, same } : null;
 }
+// Walks the rule list and returns a warning for each problem it finds.
 function analyzeRules(rs) {
   const out = [];
   return rs.forEach((r, j) => {
@@ -31374,6 +31436,8 @@ function updateGoal() {
     }
   }), el.innerHTML = bad.length ? '<b class="bad">Not fixed yet</b> (' + pass + " of " + activeGoals.length + " checks pass). " + escapeHtml(bad[0]) + "." : '<b class="ok">Fixed.</b> All ' + activeGoals.length + " checks pass.";
 }
+// Runs one packet through the rules top to bottom. The first rule where protocol, source and destination all match decides.
+// The trace records why each rule did or did not match.
 function evaluate(pkt) {
   const trace = [];
   for (let i = 0; i < rules.length; i++) {
@@ -33745,6 +33809,10 @@ html:root #tabConsole .console-in-row input:focus-visible {
 @media(max-width:760px){#labGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){#labGrid{grid-template-columns:1fr}}
 </style><script>
+// Network Fault Lab: practice fixing a broken switched network. The switches are simulated; there is no real device.
+// Pick a ticket, select a switch (select SW1), type commands as on a real switch (enable, configure terminal, show ...),
+// run the test shown under the goal, then press Verify your repair. Dell and Cisco each get their own command style.
+// Free practice opens a working network with no fault and no goal.
 let vendor = "dell", progress = {};
 function cleanProgress(o) {
   const out = {};
@@ -33994,6 +34062,7 @@ function coachRoute(cmd, mode) {
   if (mode.k === "user" || mode.k === "exec") return "Run: " + cmd + ".";
   return "You are in configuration mode, so put do in front: do " + cmd + ". (Or type end first to return to the normal prompt.)";
 }
+// True when the current ticket's goal check passes on the simulated network. Free practice never has a goal.
 function goalMetNow() {
   var m = false;
   try {
@@ -34015,6 +34084,7 @@ function pairVerified(p) {
     return v.ok && v.seq === vSeq && v.from === p.from && v.target === p.ip && (!p.name || v.line.indexOf(p.name) >= 0);
   });
 }
+// Which test pings the learner still has to run before the quiz. 'done' is true once all of them were run.
 function verifyState() {
   var ps = verifyPairs(currentLevel);
   return { pairs: ps, done: ps.length > 0 ? ps.every(pairVerified) : true };
@@ -35677,6 +35747,7 @@ function pingOut(target, ok, dup) {
   for (var z = 0; z < n; z++) pat += ".";
   consolePrint(head + pat + "\nSuccess rate is 0 percent (0/" + n + ")", "err");
 }
+// Entry point for everything typed in the console. A pending prompt gets the line first, then the selected device's command mode.
 function runConsoleCommand(raw, ui) {
   var sess = selectedDeviceId ? ensureSession(selectedDeviceId) : null, line = (raw || "").trim();
   if (sess && sess.pending) {
@@ -43602,6 +43673,9 @@ html[data-theme=light] .hol-portal {
 <button type="button" class="hol-fab hidden" id="holFab">Lab manual</button>
 
 <style id="hsNextStyle">.hol-card.next{border-color:var(--hp-accent);box-shadow:0 0 0 1px var(--hp-accent) inset}.hol-card .meta .hp-next{background:var(--hp-accent);color:var(--hp-on);font-weight:650}.hol-card .meta .hp-done{background:transparent;border:1px solid var(--hp-line2);color:var(--hp-text2)}.hol-manual .hm-foot .row[hidden]{display:none}</style><script>
+// vSphere Sandbox: a look-alike of the vSphere Client for practice. No real vCenter is involved; the inventory is made up.
+// baseState() builds the starting clusters, hosts, VMs and datastores. Tasks, events and alarms are simulated.
+// Builds the starting inventory: clusters, hosts, VMs, datastores and port groups.
 function baseState() {
   const clusters = { cluster01: { id: "cluster01", name: "Cluster 1", hosts: ["host1", "host2", "host3"] }, cluster02: { id: "cluster02", name: "Cluster 2", hosts: ["host4", "host5"] }, cluster03: { id: "cluster03", name: "Cluster 3", hosts: ["host6", "host7"] } }, hosts = { host1: { id: "host1", name: "Host 1", cluster: "cluster01", connection: "connected", maintenance: false, esxiVersion: "8.0 U2", cpuGhz: 48, cpuUsedGhz: 14, memGB: 256, memUsedGB: 96, vms: ["vm1", "vm2", "vm3"] }, host2: { id: "host2", name: "Host 2", cluster: "cluster01", connection: "connected", maintenance: false, esxiVersion: "8.0 U2", cpuGhz: 48, cpuUsedGhz: 22, memGB: 256, memUsedGB: 140, vms: ["vm4", "vm5"] }, host3: { id: "host3", name: "Host 3", cluster: "cluster01", connection: "connected", maintenance: false, esxiVersion: "8.0 U2", cpuGhz: 32, cpuUsedGhz: 6, memGB: 128, memUsedGB: 40, vms: ["vm6"] }, host4: { id: "host4", name: "Host 4", cluster: "cluster02", connection: "connected", maintenance: false, esxiVersion: "8.0 U2", cpuGhz: 64, cpuUsedGhz: 18, memGB: 512, memUsedGB: 200, vms: ["vm7", "vm8", "vm9"] }, host5: { id: "host5", name: "Host 5", cluster: "cluster02", connection: "connected", maintenance: false, esxiVersion: "8.0 U2", cpuGhz: 64, cpuUsedGhz: 9, memGB: 512, memUsedGB: 80, vms: ["vm10"] }, host6: { id: "host6", name: "Host 6", cluster: "cluster03", connection: "connected", maintenance: false, esxiVersion: "8.0 U2", cpuGhz: 32, cpuUsedGhz: 11, memGB: 192, memUsedGB: 64, vms: ["vm11", "vm12"] }, host7: { id: "host7", name: "Host 7", cluster: "cluster03", connection: "connected", maintenance: false, esxiVersion: "8.0 U2", cpuGhz: 32, cpuUsedGhz: 4, memGB: 192, memUsedGB: 28, vms: [] } };
   function mkVm(id, name, host, power, guestOs, vCpu, memGB, ip, ds, pg, cpuPct, memPct) {
@@ -43678,6 +43752,7 @@ function nowTime() {
 function logEvent(msg, sev) {
   state.events.unshift({ time: nowTime(), msg, sev: sev || "", status: sev === "bad" ? "error" : sev === "warn" ? "warn" : "success" }), state.events.length > 40 && (state.events.length = 40);
 }
+// Starts a simulated task shown under Recent Tasks. Only the latest 25 are kept.
 function startTask(description, durationMs, onDone, target) {
   const st = state;
   state.tasks || (state.tasks = []);
@@ -43696,6 +43771,7 @@ function startTask(description, durationMs, onDone, target) {
     }, Math.max(200, (durationMs || 1800) / steps));
   }, 400 + Math.random() * 600), id;
 }
+// Adds an alarm to the strip, unless one with the same title is already waiting to be acknowledged.
 function raiseAlarm(severity, title, detail) {
   state.alarms || (state.alarms = []), !state.alarms.some((a) => a.title === title && !a.acked) && (state.alarms.unshift({ id: "a" + Date.now(), severity: severity || "warn", title, detail: detail || "", time: nowTime(), acked: false }), state.alarms.length > 12 && (state.alarms.length = 12), logEvent("Alarm: " + title, severity === "bad" ? "bad" : "warn"), renderAlarms());
 }
@@ -45943,6 +46019,8 @@ __KIT_BASE__ html:root .tabs{display:flex!important;flex-wrap:wrap!important;ali
 
 </main>
 <script>
+// OSI & Network Reference: look up a protocol, port, layer, device or symptom.
+// buildIndex() turns the data into one searchable list; lookup() scores it. Example: typing 3389 finds the entry for that port.
 function applyDataFixes() {
   var K = KIT_DATA;
   K.osi.forEach(function(L) {
@@ -46025,6 +46103,7 @@ function placeOf(e) {
   return (e.kind === "protocol" || e.kind === "port") && Object.prototype.hasOwnProperty.call(PLACE, k) ? PLACE[k] : "";
 }
 var INDEX = null, KIND_RANK = { layer: 3, protocol: 2, port: 1, device: 0, term: 0, abbr: 0 };
+// Builds the searchable list of layers, protocols, ports, devices and symptoms. Each entry gets one lowercase string ('hay') of all its text.
 function buildIndex() {
   var out = [], titles = {};
   function add(e) {
@@ -46053,6 +46132,8 @@ function wordHit(hay, w) {
   for (var at = hay.indexOf(w); at !== -1; at = hay.indexOf(w, at + 1)) if (at === 0 || !/[a-z0-9]/.test(hay.charAt(at - 1))) return true;
   return false;
 }
+// Scores one entry for the search words. Every word must match, or the score is 0.
+// An exact port match scores highest (90), then an exact title (40), then a title that starts with the word.
 function scoreEntry(e, words, q) {
   for (var s = 0, t = e.tl || (e.tl = norm(e.title)), f = e.fl != null ? e.fl : e.fl = norm(e.full || ""), u = e.ul != null ? e.ul : e.ul = norm(e.use || ""), i = 0; i < words.length; i++) {
     var w = words[i];
@@ -46074,6 +46155,7 @@ function addSymptoms() {
     }).join(" ")].join(" ").toLowerCase(), INDEX.push(e);
   });
 }
+// Runs a search. A layer name such as 'layer 2' picks that layer's entries.
 function lookup(q) {
   if (q = normQuery(q), !q) return { list: [], total: 0 };
   var n = layerOf(q);
@@ -47057,6 +47139,9 @@ __KIT_BASE__{}
   pointer-events: none;
 }
 </style><script>
+// Config Diff: compare a before and an after configuration and see what was added, removed or changed.
+// Example: paste the running config before and after a change. Lines are paired with the Myers diff algorithm, and
+// indented blocks (such as an interface) are grouped so a change shows under the block it belongs to.
 function splitLines(text) {
   if (!text) return [];
   var raw = String(text).replace(/\r\n?/g, `
@@ -47079,6 +47164,7 @@ function normText(t, o) {
   var s = o.ws ? t.replace(/\s+/g, " ").trim() : t;
   return o.icase ? s.toLowerCase() : s;
 }
+// The Myers diff algorithm: finds the shortest list of added and removed lines that turns A into B, and gives up past 'limit' edits.
 function myers(A, B, limit) {
   var n = A.length, m = B.length, max = Math.min(n + m, limit), off = max + 1, v = new Int32Array(2 * max + 3), trace = [], d, k, x, y;
   for (d = 0; d <= max; d++) {
@@ -47126,6 +47212,7 @@ function tokens(t) {
   var c = tokenCache[t];
   return c || (c = tokenCache[t] = t.match(/[A-Za-z0-9_.\/:-]+|\S/g) || []), c;
 }
+// Scores how alike two lines are by counting the tokens they share. 0 means nothing in common.
 function similarity(a, b) {
   var ta = tokens(a), tb = tokens(b);
   if (!ta.length || !tb.length) return 0;
@@ -47141,6 +47228,7 @@ function inlineRange(a, b) {
   s > 0 && (a.charCodeAt(a.length - s) & 64512) === 56320 && s--;
   return { a: [p, a.length - s], b: [p, b.length - s] };
 }
+// Groups lines into sections by indentation, so a changed line can be shown under its block.
 function sectionsOf(lines, o, tbl) {
   var stack = [], out = [], keys = [];
   return out.k = keys, lines.forEach(function(e) {
@@ -47157,6 +47245,7 @@ function sectionsOf(lines, o, tbl) {
     }
   }), out;
 }
+// Main entry point. Drops the lines the options ignore (whitespace, blank lines, case), then diffs what is left.
 function compare(beforeText, afterText, o) {
   tokenCache = /* @__PURE__ */ Object.create(null);
   var A = splitLines(beforeText).filter(function(e) {
@@ -48227,6 +48316,9 @@ __KIT_BASE__{}
   <div id="paOut" aria-live="polite"></div>
 </main>
 <script>
+// Ping / Traceroute Analyzer: paste output and read it at a glance. It runs nothing.
+// Reads ping (Windows, Linux, macOS, Cisco), tracert, traceroute, mtr, WinMTR, pathping and the PowerShell Test-NetConnection tests.
+// Example: a Windows tracert starting 'Tracing route to example.com' becomes a list of hops with loss and slow ones marked.
 var DEFAULTS = { high: 150, jump: 50 }, IP4 = "(?:\\d{1,3}\\.){3}\\d{1,3}";
 function round1(x) {
   return Math.round(x * 10) / 10;
@@ -48273,6 +48365,7 @@ function implausNote(r, n) {
 function capNote(r) {
   r.dropped && r.notes.push({ level: "warn", text: r.dropped + " more " + (r.dropped === 1 ? "line that looks" : "lines that look") + " like " + (r.dropped === 1 ? "a hop was" : "hops were") + " left out. Hop numbers above 255 cannot occur, because the TTL field is 8 bits. If this is several outputs pasted together, paste one at a time." });
 }
+// When reply numbers skip, records the missing probes as lost (up to MAX_GAP).
 function pingGap(r, S) {
   var base = r.lastSeq == null ? r.hdr ? r.os === "macOS" ? 0 : 1 : S : r.lastSeq + 1;
   if (S > base) {
@@ -48298,6 +48391,7 @@ function reportNote(h) {
   /net(work)?\s+unreachable/.test(low) ? (lvl = "bad", adv = " That router has no route to the destination network. Check its routing table.") : /host\s+unreachable/.test(low) ? (lvl = "bad", adv = " That router has a route but could not deliver to the host, usually because the host is off or its address is wrong on that router\u2019s local network.") : /prohibited|filtered/.test(low) && (lvl = "bad", adv = " Something on that router is blocking the traffic on purpose. Check its access lists.");
   return { level: lvl, text: "Hop " + h.n + " (" + who + ") reported: " + h.reports + "." + adv };
 }
+// Reads one block of ping output into its target, each probe and the totals the command reported.
 function parsePing(block) {
   var r = { kind: "ping", os: "", target: "", address: "", probes: [], reported: null, notes: [], line: block.start + 1 }, m;
   return block.lines.forEach(function(L) {
@@ -48531,6 +48625,8 @@ function parseHop(text) {
   } else tok[7] && flags.push(tok[7]);
   return !probes.length && !addrs.length && !rp ? null : hopFill({ n, probes, addrs, flags, reports: rp ? rp[1].replace(/\.$/, "") : "", implaus: bad });
 }
+// Reads one traceroute or tracert block into a list of hops.
+// Example of a line it recognises: 'Tracing route to example.com [93.184.216.34]'.
 function parseTrace(block) {
   var r = { kind: "trace", os: "", target: "", address: "", hops: [], complete: false, line: block.start + 1, notes: [], dropped: 0 }, m, bad = 0;
   block.lines.forEach(function(L) {
@@ -48651,6 +48747,7 @@ function finishMtr(r) {
     return h.sent || 0;
   })) : 0, r.final = last2 || null, last2 && last2.addrs[0] && (r.target = last2.addrs[0].host || last2.addrs[0].ip, r.address = last2.addrs[0].ip), r;
 }
+// Reads an mtr report: a 'HOST:' header line, then one line per hop.
 function parseMtr(block) {
   var r = { kind: "mtr", os: "mtr", target: "", address: "", hops: [], notes: [], line: block.start + 1 }, cols = ["Loss%", "Snt", "Last", "Avg", "Best", "Wrst", "StDev"], m;
   return block.lines.forEach(function(L2) {
