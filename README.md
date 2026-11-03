@@ -36,7 +36,7 @@ Offline networking and IT tools in a single HTML file. Twelve tools: seven for e
 
 - **No network requests.** Each tool carries a strict Content Security Policy that blocks outbound connections, so what you paste has nowhere to go.
 - **Nothing uploads.** Settings are kept in your browser's local storage and nowhere else.
-- **Encrypted export.** Anything the Log Sanitizer saves is encrypted with AES-GCM or OpenSSL-compatible encryption.
+- **Encrypted exports.** The Log Sanitizer's session map and other saved state that holds secrets or network details are encrypted with AES-GCM or OpenSSL-compatible encryption. The sanitized text itself is plain text when you copy it or use Download Text, and detection can miss things, so read it before you share it.
 
 ## Log Sanitizer
 

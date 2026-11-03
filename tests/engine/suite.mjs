@@ -186,7 +186,7 @@ test('5d NX-OS style CDP table headers are read', () => {
 });
 
 test('7c garbage addresses and masks cannot hang or crash the reader', () => {
-  const NM = fresh(); eq(NM.util.maskToBits('255.255.255.0'), 24); ok(typeof NM.util.maskToBits('-15.255.255.0') === 'number'); eq(NM.util.maskToBits('x.y.z'), 0);
+  const NM = fresh(); eq(NM.util.maskToBits('255.255.255.0'), 24); ok(typeof NM.util.maskToBits('-15.255.255.0') === 'number'); eq(NM.util.maskToBits('x.y.z'), -1, 'garbage is invalid, not a length');
   const t = Date.now(); const secs = NM.parseInputs([{ name: 'g', text: 'hostname G\ninterface Vlan1\n ip address -1.-1.-1.-1 -255.-255.-255.-255\n ip address 999.1.1.1 255.0.0.-1\n' }, { name: 'e', text: '[root@esx:~] esxcli network ip interface ipv4 get\nName  IPv4 Address  IPv4 Netmask   IPv4 Broadcast  Address Type  Gateway     DHCP DNS\n----  ------------  -------------  --------------  ------------  ----------  --------\nvmk0  x0.0.99.21    -15.255.255.0  10.-1.99.205     STATIC        -10.99999.99.-1   false\n' }]);
   ok(Date.now() - t < 1000, 'quick'); const m = NM.newModel(); NM.apply(m, secs, { at: T0 }); NM.view(m, { now: T0 });
 });
@@ -446,6 +446,19 @@ test('29 a synthetic network of 120 devices imports, links and searches quickly'
   console.log('         snapshot ' + Math.round(t6 - t5) + ' ms, serialise ' + Math.round(t7 - t6) + ' ms (' + (json.length / 1e6).toFixed(1) + ' MB), load ' + Math.round(t8 - t7) + ' ms');
   // a change to one device stores only that device again
   const before = Object.keys(NM.pool).length; imp0(NM, m, [['edit', 'AS7#show interfaces status\nPort      Name               Status       Vlan       Duplex  Speed Type\nGi1/0/1   x                  notconnect   10         auto auto 10/100/1000BaseTX\n']], T0 + H); NM.snapshotOf(m, 'small change', 'manual', T0 + H); const added = Object.keys(NM.pool).length - before; ok(added <= 4, 'structural sharing stored ' + added + ' new entries');
+});
+
+console.log('Netmask handling (review finding TP-01)');
+test('a netmask converts only when it is a contiguous mask, for every length from /0 to /32', () => {
+  const NM = fresh(), f = NM.util.maskToBits;
+  for (let n = 0; n <= 32; n++) { const v = n === 0 ? 0 : (0xFFFFFFFF << (32 - n)) >>> 0, mask = [v >>> 24, v >>> 16 & 255, v >>> 8 & 255, v & 255].join('.'); eq(f(mask), n, mask); }
+  for (const bad of ['255.0.255.0', '999.255.0.0', '255.255', '255.255.255.0.0', '0.0.0.255', '255.255.255.256', '01.2.3.4', '', 'x.y.z.w']) eq(f(bad), -1, bad);
+});
+test('a damaged mask in a Windows session never produces a CIDR', () => {
+  const NM = fresh(), m = NM.newModel(); const text = fx('win-pc01-ipconfig.txt').replace(/Subnet Mask[ .]*: \d+\.\d+\.\d+\.\d+/g, (x) => x.replace(/: .*$/, ': 255.0.255.0'));
+  NM.apply(m, NM.parseInputs([{ name: 'pc.txt', text }]), { at: T0 });
+  const ips = Object.values(m.devices).flatMap((d) => Object.values(d.ifaces).flatMap((i) => i.obs ? [i.obs.ip].concat(i.obs.ips || []).filter(Boolean) : []));
+  ok(ips.length > 0, 'addresses were still read'); ok(ips.every((x) => !/\/\d+$/.test(x)), 'a prefix was asserted from a damaged mask: ' + ips.join(', '));
 });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed' + (fail ? ': ' + failures.join('; ') : ''));

@@ -15,7 +15,7 @@ const MTR = await S.frame(`return w.EX_MORE.mtr;`);
 const mtr = await analyze(MTR);
 S.ok('mtr: one mtr result with 6 hops', mtr.results.length === 1 && mtr.results[0].kind === 'mtr' && mtr.results[0].hops === 6, mtr.results);
 S.ok('mtr: the card names the target and shows loss at the last hop', /mtr report to 93\.184\.216\.34/.test(mtr.text) && /Loss at last hop\s*\n?\s*34%|34%\s*\n?\s*Loss at last hop/i.test(mtr.text.replace(/\n+/g, '\n')) || /34%/.test(mtr.text), mtr.text.slice(0, 400));
-S.ok('mtr: loss that starts at hop 4 and persists is called out', has(mtr, /Loss begins at hop 4 .*every later hop/), mtr.results[0].obs);
+S.ok('mtr: loss that starts at hop 4 and persists is called out', has(mtr, /Loss first appears at hop 4 .*every later hop/), mtr.results[0].obs);
 S.ok('mtr: the silent hop 3 is noted as ignoring probes', has(mtr, /Hop 3 did not answer at all, but later hops did/), mtr.results[0].obs);
 S.ok('mtr: the silent hop row is styled silent and loss rows are flagged', mtr.silent === 1 && mtr.flagged >= 1, { silent: mtr.silent, flagged: mtr.flagged });
 S.ok('mtr: probes per hop shown (50)', /Probes per hop/.test(mtr.text) && /50/.test(mtr.text), mtr.text.slice(0, 300));
@@ -53,7 +53,7 @@ S.ok('mtr: host names, IPs and a second path address are read', hostRows.results
 // WinMTR
 const wm = await analyze(await S.frame(`return w.EX_MORE.winmtr;`));
 S.ok('WinMTR: read as an mtr report with 5 hops', wm.results.length === 1 && wm.results[0].kind === 'mtr' && wm.results[0].os === 'WinMTR' && wm.results[0].hops === 5, wm.results);
-S.ok('WinMTR: loss that begins at hop 4 is called out; the no-response hop is silent', has(wm, /Loss begins at hop 4/) && wm.silent === 1, wm.results[0].obs);
+S.ok('WinMTR: loss that begins at hop 4 is called out; the no-response hop is silent', has(wm, /Loss first appears at hop 4/) && wm.silent === 1, wm.results[0].obs);
 
 // pathping
 const pp = await analyze(await S.frame(`return w.EX_MORE.pathping;`));

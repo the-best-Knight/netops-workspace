@@ -13,9 +13,28 @@ Parses every script in `index.html`, including the tools embedded in it. It catc
 ## Engine tests (Node)
 
 ```sh
-node tests/engine/suite.mjs      # 71 tests for the Topology Builder's network-data engine
+node tests/engine/suite.mjs      # 73 tests for the Topology Builder's network-data engine
 node tests/engine/fuzz.mjs 800   # 800 batches of damaged and mixed-up device output; nothing may throw
 ```
+
+```sh
+for t in sanitizer configdiff calculator routing switching vsphere dns ping lessons content; do node tests/engine/$t.mjs; done
+```
+
+These run the other tools' own code, taken from `index.html` with no browser: `tests/engine/tool.mjs` cuts a tool's script out, runs it against a stub page, and hands back the functions a test asks for (`__set` and `__get` reach its other variables). Each file is named for its tool and its checks carry the finding ID of the technical review they came from.
+
+| File | What it covers |
+| --- | --- |
+| `sanitizer` | YAML block scalars, Digest headers, hostnames, mask versus address, placeholders that never change |
+| `configdiff` | Reordered rules are never "unchanged", quote-aware whitespace |
+| `calculator` | The generated ACL, iptables and nftables text, checked by running it |
+| `routing` | Administrative distance 255 |
+| `switching` | Spanning-tree cost and tie-breaks, `root secondary`, rejected commands, the console path, native VLAN, ACL grammar |
+| `vsphere` | Hot add, snapshot space, host reboot, VMware Tools |
+| `dns` | CNAME with `ANY`, SRV with a root target |
+| `ping` | mtr wording, loss placement, damaged numbers |
+| `lessons` | The access list lesson is fixed by correcting the rule |
+| `content` | Wording claims in the README and the reference data |
 
 `tests/engine/load.mjs` cuts the engine out of `index.html` (it is the part of the Topology Builder's script before the drawing code) and runs it with no browser. The inputs are in `tests/fixtures/`: realistic Cisco, Dell, Palo Alto, ESXi, Linux and Windows output written for the tests. The Windows output follows the layout of the real commands but is not captured from a machine.
 

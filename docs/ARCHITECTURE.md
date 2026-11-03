@@ -38,7 +38,7 @@ The first line of each tool's script is a short comment saying what the tool doe
 ## Rules the code follows
 
 - **Offline.** No network calls of any kind. A test checks the Topology Builder engine for this.
-- **Nothing readable is stored.** Anything saved with network details or secrets is encrypted (AES-GCM, with a key from your passphrase using PBKDF2).
+- **Nothing readable is stored.** Saved state with network details or secrets, such as the Log Sanitizer's session map and the Topology Builder's exports, is encrypted (AES-GCM, with a key from your passphrase using PBKDF2). The Log Sanitizer's sanitized text is the one plain-text output: copy and Download Text leave it readable on purpose.
 - **The simulated labs are simulations.** The DNS, routing, firewall, fault and vSphere labs never touch a real device or network.
 
 ## Checking a change
