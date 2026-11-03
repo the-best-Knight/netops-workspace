@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added Script Repository with the Free IP Finder (Invoke-LabScan) from the supplied older copy. It supports showing the code and copying it for PowerShell, and appears in hub search, the tool switcher and Help. Existing tool sources are retained from main.
+
 - Deep review fixes (finding IDs from docs/reviews/2026-11-03-deep-review.md in brackets):
   - Log Sanitizer: the Wi-Fi key in `netsh wlan show profile key=clear` output (`Key Content : ...`) is now hidden (DR-11). A `name=` or `name:` value that is not a path is replaced with a plain `[ID_n]` token instead of a made-up log file path (DR-12).
   - Ping / Traceroute Analyzer: Windows `Packet needs to be fragmented but DF set.` and Linux `ping: local error: message too long, mtu=N` are read as probes that were too big for the path MTU, not as a target that may be down (DR-13, DR-14). So is a Linux `Frag needed and DF set (mtu = N)` reply from a router.

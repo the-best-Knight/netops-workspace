@@ -17,7 +17,7 @@ jobs:
         run: node scripts/check-scripts.mjs
       - name: Engine tests
         run: node tests/engine/suite.mjs
-      - name: Tool tests (sanitizer, config diff, calculator, routing, switching, switch lab, vSphere, DNS, ping, lessons, content)
-        run: for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content; do node tests/engine/$t.mjs || exit 1; done
+      - name: Tool tests (sanitizer, config diff, calculator, routing, switching, switch lab, vSphere, DNS, ping, lessons, content, script repository)
+        run: for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content scriptrepo; do node tests/engine/$t.mjs || exit 1; done
       - name: Engine fuzz run
         run: node tests/engine/fuzz.mjs 400

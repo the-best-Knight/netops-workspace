@@ -7,7 +7,7 @@ The whole kit is one file, `index.html`. It has no server, no build step and no 
 ```
 index.html
 ├── the main menu: HTML and CSS for the list of tools and the workspace around them
-├── twelve blocks, one per tool:   <script type="text/plain" id="src-log-sanitizer"> ... </script>
+├── thirteen blocks, one per tool:   <script type="text/plain" id="src-log-sanitizer"> ... </script>
 │     each block holds that tool's complete page (HTML, CSS and JavaScript)
 └── one script at the bottom: the menu logic (search, pins, switching tools)
 ```
@@ -16,10 +16,11 @@ A tool is stored as plain text, not as running code. When you open it, the menu 
 
 Inside a block, `</script>` is written `<\/script>` so the block does not end early. Every script is formatted and commented so you can read it.
 
-## The twelve tools
+## The thirteen tools
 
 | Block id | Tool | Where to start reading |
 | --- | --- | --- |
+| `src-script-repo` | Script Repository | `SCRIPTS`, then `copyText` and `setCodeVisible` |
 | `src-log-sanitizer` | Log Sanitizer | `SANITIZATION_RULES`, then `sanitizeText` |
 | `src-toolkit` | Network Calculator | `runCalc`, `runVlsm` |
 | `src-practice-ref` | Cheat Sheet | `scoreRow`, `findRows` |
@@ -51,3 +52,5 @@ sh tests/run.sh                  # browser tests in headless Firefox, one file a
 ```
 
 The browser tests open `index.html`, click through the tools and check what is on screen. A test that depends on colours is named `*.dark.test.mjs` or `*.light.test.mjs`, so it runs in the right browser theme.
+
+The Script Repository embeds its PowerShell script as text. Its JavaScript only displays and copies that text; executing it is a separate PowerShell action.

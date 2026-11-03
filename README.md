@@ -2,7 +2,7 @@
 
 [![Check scripts](https://github.com/the-best-Knight/network-skills-kit/actions/workflows/check.yml/badge.svg)](https://github.com/the-best-Knight/network-skills-kit/actions/workflows/check.yml)
 
-Offline networking and IT tools in a single HTML file. Twelve tools: seven for everyday work and five for practice. No server, no install, and no external requests. Everything runs in your browser.
+Offline networking and IT tools in a single HTML file. Thirteen tools: eight for everyday work and five for practice. No server, no install, and no external requests. Everything runs in your browser.
 
 **[Open it live](https://ianknight.org/tools/network-skills-kit.html)** · **[Download `index.html`](https://raw.githubusercontent.com/the-best-Knight/network-skills-kit/main/index.html)** · [How it was built](https://ianknight.org/projects/it-skills-kit/)
 
@@ -14,6 +14,7 @@ Offline networking and IT tools in a single HTML file. Twelve tools: seven for e
 
 | Tool | What it does |
 | --- | --- |
+| Script Repository | Copy PowerShell scripts, starting with Free IP Finder (Invoke-LabScan), to run in your own console |
 | Log Sanitizer | Hides IPs, passwords, usernames and other secrets in a log before you share it |
 | OSI & Network Reference | Layers, protocols and ports, plus a symptom-based guide to the likely cause of an outage |
 | Network Calculator | Subnet, IPv6, VLSM, supernet, split and ACL wildcard math, bandwidth and hash calculators, converters |
@@ -31,6 +32,8 @@ Offline networking and IT tools in a single HTML file. Twelve tools: seven for e
 | Firewall Rules Lab | ACL simulator: ordered rules, a packet tester, implicit deny, policy scenarios |
 | Network Fault Lab | Diagnose-and-fix scenarios with a live topology and a practice switch or router console (Dell OS10 or Cisco IOS), plus a free practice network with no goal |
 | vSphere Sandbox | Practice common vSphere tasks in a safe offline copy |
+
+The Script Repository displays and copies scripts; it does not run them in the browser. Free IP Finder sends network probes when you run the copied script in PowerShell. Nonresponding addresses are candidates to check against DHCP and address records before use.
 
 ## Private by design
 
