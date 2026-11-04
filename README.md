@@ -1,10 +1,10 @@
 # NetOps Workspace
 
-[![Check scripts](https://github.com/the-best-Knight/network-skills-kit/actions/workflows/check.yml/badge.svg)](https://github.com/the-best-Knight/network-skills-kit/actions/workflows/check.yml)
+[![Check scripts](https://github.com/the-best-Knight/netops-workspace/actions/workflows/check.yml/badge.svg)](https://github.com/the-best-Knight/netops-workspace/actions/workflows/check.yml)
 
 **Offline tools for network engineering.** NetOps Workspace (NetOps for short) is a set of networking and IT tools in a single HTML file. Thirteen tools: eight for everyday work and five for practice. No server, no install, and no external requests. Everything runs in your browser.
 
-**[Open it live](https://ianknight.org/tools/network-skills-kit.html)** · **[Download `index.html`](https://raw.githubusercontent.com/the-best-Knight/network-skills-kit/main/index.html)** · [How it was built](https://ianknight.org/projects/it-skills-kit/)
+**[Open it live](https://ianknight.org/tools/network-skills-kit.html)** · **[Download `index.html`](https://raw.githubusercontent.com/the-best-Knight/netops-workspace/main/index.html)** · [How it was built](https://ianknight.org/projects/it-skills-kit/)
 
 ![The NetOps Workspace home screen, listing the work tools and practice labs](docs/screenshots/hub.png)
 
