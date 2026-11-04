@@ -219,4 +219,69 @@ test('vendor switch: the routed port is ethernet1/1/8 on Dell and Gi0/8 on Cisco
   lab(13, 'dell'); on('l3a'); ok(/Ethernet 1\/1\/8\s+10\.1\.2\.1/.test(run('show ip interface brief')), run('show ip interface brief'));
   lab(13, 'cisco'); on('l3a'); priv('cisco'); ok(/GigabitEthernet0\/8\s+10\.1\.2\.1/.test(run('show ip interface brief')), run('show ip interface brief'));
 });
+
+console.log('DA-04 and DA-05: commands the lab recognises but does not simulate must say so, and real syntax errors stay errors');
+// lab 9: L3-SW has Gi0/1 (Dell ethernet1/1/1), VLANs 10 and 20
+const l3 = (vendor) => { lab(9, vendor); on('l3sw'); conf(vendor); return vendor; };
+const port = (vendor, n) => (vendor === 'cisco' ? 'interface gi0/' + n : 'interface ethernet 1/1/' + n);
+const cfgOf = (vendor, n) => { run('end'); const t = run(vendor === 'cisco' ? 'show running-config interface gi0/' + n : 'show running-configuration interface ethernet 1/1/' + n); run('configure terminal'); return t; };
+const NOTE = /not simulated/i, SYNTAX = /Invalid input/i;
+for (const vendor of ['cisco', 'dell']) {
+  test('channel-group says it configured nothing, and changes no state (' + vendor + ')', () => {
+    l3(vendor); run(port(vendor, 1)); const before = cfgOf(vendor, 1); run(port(vendor, 1));
+    const out = run('channel-group 1 mode active'); ok(NOTE.test(out) && /nothing was configured/i.test(out), out); ok(!SYNTAX.test(out), out);
+    eq(cfgOf(vendor, 1), before, 'running config of the port changed');
+    run('end'); const sum = run(vendor === 'cisco' ? 'show etherchannel summary' : 'show port-channel summary'); ok(NOTE.test(sum), sum);
+  });
+  test('channel-group keeps real syntax errors (' + vendor + ')', () => {
+    l3(vendor); run(port(vendor, 1));
+    ok(SYNTAX.test(run('channel-group 0 mode active')) && SYNTAX.test(run('channel-group abc mode active')), 'group number');
+    ok(SYNTAX.test(run('channel-group ' + (vendor === 'cisco' ? 49 : 129) + ' mode active')), 'group number above the limit');
+    ok(SYNTAX.test(run('channel-group 1 mode bogus')), 'mode word'); ok(SYNTAX.test(run('channel-group 1 bogus active')), 'second word');
+    ok(/Incomplete command/i.test(run('channel-group 1')) && /Incomplete command/i.test(run('channel-group 1 mode')), 'incomplete');
+    ok(!NOTE.test(run('channel-group 1 mode bogus')), 'a bad command must not look recognised');
+  });
+}
+test('channel-group modes differ by vendor: desirable and auto are Cisco only; Dell allows group 128', () => {
+  l3('cisco'); run(port('cisco', 1)); ok(NOTE.test(run('channel-group 1 mode desirable')) && NOTE.test(run('channel-group 48 mode passive')) && NOTE.test(run('channel-group 2 mode auto non-silent')), 'cisco modes');
+  l3('dell'); run(port('dell', 1)); ok(SYNTAX.test(run('channel-group 1 mode desirable')), 'dell has no desirable'); ok(NOTE.test(run('channel-group 128 mode on')), 'dell group 128');
+});
+test('channel-group outside an interface is still refused', () => {
+  l3('cisco'); const out = run('channel-group 1 mode active'); ok(SYNTAX.test(out) && !NOTE.test(out), 'global configuration: ' + out);
+  lab(9, 'cisco'); on('l3sw'); run('enable'); ok(SYNTAX.test(run('channel-group 1 mode active')), 'not in configuration mode');
+});
+test('config mode still hides the ordinary chatter', () => { l3('cisco'); ok(!/Entered interface/.test(run('interface gi0/1')), 'chatter is back'); l3('dell'); ok(!/Entered interface/.test(run('interface ethernet 1/1/1')), 'chatter is back (dell)'); });
+for (const vendor of ['cisco', 'dell']) {
+  test('interface port-channel is recognised, not simulated, and later commands do not land on the previous port (' + vendor + ')', () => {
+    l3(vendor); run(port(vendor, 1)); const before = cfgOf(vendor, 1); run(port(vendor, 1));
+    const out = run('interface port-channel 1'); ok(NOTE.test(out) && !SYNTAX.test(out), out);
+    run('switchport mode trunk'); eq(cfgOf(vendor, 1), before, 'a command meant for the port-channel changed the physical port');
+    l3(vendor); ok(SYNTAX.test(run('interface port-channel 0')) && SYNTAX.test(run('interface port-channel ' + (vendor === 'cisco' ? 49 : 129))), 'group number');
+    ok(NOTE.test(run('interface port-channel1')), 'no space form');
+  });
+}
+test('spanning-tree vlan N priority sets the bridge priority on Cisco and rejects wrong values like IOS', () => {
+  l3('cisco'); const bad = run('spanning-tree vlan 10 priority 4097'); ok(/increments of 4096/.test(bad) && /Allowed values/.test(bad), bad);
+  ok(SYNTAX.test(run('spanning-tree vlan 10 priority 65536')) && SYNTAX.test(run('spanning-tree vlan 10 priority x')) && SYNTAX.test(run('spanning-tree vlan 9999 priority 4096')), 'out of range values');
+  ok(/Incomplete command/.test(run('spanning-tree vlan 10 priority')), 'incomplete');
+  eq(run('spanning-tree vlan 10 priority 4096'), 'L3-SW(config)#spanning-tree vlan 10 priority 4096', 'a good command is silent');
+  run('end'); const st = run('show spanning-tree vlan 10'); ok(/4106/.test(st) && /priority 4096/.test(st), st);
+  run('configure terminal'); ok(/does not exist/.test(run('spanning-tree vlan 77 priority 4096')), 'unknown VLAN');
+});
+test('spanning-tree vlan N priority on Dell is checked, then noted as not changing the view', () => { l3('dell'); const ok1 = run('spanning-tree vlan 10 priority 4096'); ok(NOTE.test(ok1) || /does not change/.test(ok1), ok1); ok(/multiple of 4096/.test(run('spanning-tree vlan 10 priority 100')), 'dell increments'); });
+test('numbered access lists: recognised on Cisco and not simulated; bad numbers and words stay errors; Dell has none', () => {
+  l3('cisco'); const out = run('access-list 101 permit tcp any any eq www'); ok(NOTE.test(out) && /ip access-list extended/.test(out) && !SYNTAX.test(out), out);
+  ok(NOTE.test(run('access-list 10 permit any')) && NOTE.test(run('access-list 1300 deny any')), 'standard numbers');
+  ok(SYNTAX.test(run('access-list 0 permit any')) && SYNTAX.test(run('access-list 200 permit any')) && SYNTAX.test(run('access-list 101 foo any any')), 'bad number or action');
+  ok(/Incomplete command/.test(run('access-list')) && /Incomplete command/.test(run('access-list 101')), 'incomplete');
+  l3('dell'); ok(SYNTAX.test(run('access-list 101 permit ip any any')), 'OS10 has no numbered access-list command');
+});
+test('ip route: missing next hop is an incomplete command; a bad address is still a caret error', () => {
+  l3('cisco'); ok(/^% Incomplete command\.$/m.test(run('ip route 10.1.0.0 255.255.0.0')), 'cisco incomplete'); ok(SYNTAX.test(run('ip route 10.1.0.0 255.255.0.300 10.0.0.1')) && SYNTAX.test(run('ip route banana 255.255.0.0')), 'bad values');
+  l3('dell'); ok(/% Error: Incomplete command\./.test(run('ip route 10.1.0.0/16')), 'dell incomplete'); ok(SYNTAX.test(run('ip route 10.1.0.0/40 10.0.0.1')), 'dell bad prefix');
+});
+test('interface range works on both vendors with ports that exist; a port the device lacks is an error', () => {
+  l3('cisco'); ok(!SYNTAX.test(run('interface range gi0/1 - 2')) && /config-if-range/.test(run('description x')), 'cisco'); run('exit'); ok(SYNTAX.test(run('interface range gi0/1 - 9')), 'cisco missing port');
+  l3('dell'); ok(!SYNTAX.test(run('interface range ethernet 1/1/1-1/1/2')) && /conf-range-eth1\/1\/1-1\/1\/2/.test(run('description x')), 'dell range'); run('exit'); ok(SYNTAX.test(run('interface range ethernet 1/1/1-1/1/9')), 'dell missing port');
+});
 done();

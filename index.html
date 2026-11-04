@@ -34982,7 +34982,8 @@ function clearConsole() {
 }
 function consolePrint(text, cls) {
   coachCur && cls === "err" && COACH_REJ.test(String(text)) && (coachCur.rejected = true);
-  if (quietCfg && cls !== "err" && cls !== "log" && cls !== "cmd" && cls !== "more") return;
+  // config mode stays quiet like a real switch (no "Entered interface" chatter), but limitation notes ("warn") must reach the learner
+  if (quietCfg && cls !== "err" && cls !== "warn" && cls !== "log" && cls !== "cmd" && cls !== "more") return;
   if (capBuf) {
     capBuf.push({ text, cls });
     return;
@@ -36840,6 +36841,21 @@ function runConsoleCommandCore(raw, orig) {
         d.ifaces[sviKey] || (d.ifaces[sviKey] = { name: sviKey, ip: "", mask: "", status: "up", admin: "up", svi: true }, d.vlans || (d.vlans = {}), d.vlans[vid] || (d.vlans[vid] = { id: vid, name: "VLAN" + String(vid).padStart(4, "0") })), confIface = sviKey, d._vlanCfg = void 0, updateConsoleContext(), consolePrint("Entered interface " + sviKey, "ok"), markChanged();
         return;
       }
+      const pcM = /^(?:port-channel|portchannel|po)(\d*)$/.exec(parts[1]);
+      if (pcM) {
+        const pcN = pcM[1] || parts[2] || "";
+        if (!pcN) {
+          consolePrint(vendor === "dell" ? "% Error: Incomplete command." : "% Incomplete command.", "err");
+          return;
+        }
+        if (!/^\d{1,3}$/.test(pcN) || +pcN < 1 || +pcN > (vendor === "dell" ? 128 : 48)) {
+          cliInvalid(pcM[1] ? 1 : 2, curLine);
+          return;
+        }
+        confIface = null, confAcl = null, d._vlanCfg = void 0, d._range = void 0, updateConsoleContext();
+        consolePrint("% Lab note: port-channel interfaces are not simulated in this lab. Nothing was configured, and you are back at global configuration, so the commands that follow apply to no interface.", "warn");
+        return;
+      }
       cliInvalid(1, curLine);
       return;
     }
@@ -37006,6 +37022,27 @@ function runConsoleCommandCore(raw, orig) {
     d.dns = d.dns.filter((v) => gone.indexOf(v) < 0), markChanged(), consolePrint("Name server removed: " + gone.join(" "), "ok");
     return;
   }
+  if (primary === "access-list" && vendor !== "dell" && isSw(d) && confMode && !confIface && !confAcl) {
+    const an = parts[1];
+    if (!an) {
+      consolePrint("% Incomplete command.", "err");
+      return;
+    }
+    if (!/^\d{1,4}$/.test(an) || !(+an >= 1 && +an <= 199 || +an >= 1300 && +an <= 2699)) {
+      cliInvalid(1, curLine);
+      return;
+    }
+    if (!parts[2]) {
+      consolePrint("% Incomplete command.", "err");
+      return;
+    }
+    if (!/^(permit|deny|remark|dynamic|evaluate)$/.test(parts[2])) {
+      cliInvalid(2, curLine);
+      return;
+    }
+    consolePrint("% Lab note: numbered access lists are not simulated in this lab. Nothing was configured. Use a named list instead: ip access-list extended <name>.", "warn");
+    return;
+  }
   if (primary === "ip" && parts[1] === "access-list" && (parts[2] === "extended" ? parts[3] : parts[2])) {
     if (!d) {
       consolePrint("% Select a device first", "err");
@@ -37071,7 +37108,9 @@ function runConsoleCommandCore(raw, orig) {
       rn = parts[2].split("/")[0], rm = prefixToMask(+bs), nh = parts[3];
     } else rn = parts[2], rm = parts[3], nh = parts[4];
     if (!rn || !rm || !nh) {
-      cliUnknown(curLine);
+      if (!validIp(rn)) cliInvalid(2, curLine);
+      else if (!cidr && rm && !validMask(rm)) cliInvalid(3, curLine);
+      else consolePrint(vendor === "dell" ? "% Error: Incomplete command." : "% Incomplete command.", "err");
       return;
     }
     let rdist = cidr ? parts[4] : parts[5];
@@ -37458,7 +37497,24 @@ function runConsoleCommandCore(raw, orig) {
       consolePrint("% Enter an interface first", "err");
       return;
     }
-    d.ifaces[confIface].channelGroup = parts[1], markChanged(), consolePrint("channel-group " + parts[1] + " (LAG not fully simulated)", "warn");
+    const cgModes = vendor === "dell" ? ["active", "on", "passive"] : ["active", "auto", "desirable", "on", "passive"], cgMax = vendor === "dell" ? 128 : 48;
+    if (!/^\d{1,3}$/.test(parts[1]) || +parts[1] < 1 || +parts[1] > cgMax) {
+      cliInvalid(1, curLine);
+      return;
+    }
+    if (!parts[2] || parts[2] === "mode" && !parts[3]) {
+      consolePrint(vendor === "dell" ? "% Error: Incomplete command." : "% Incomplete command.", "err");
+      return;
+    }
+    if (parts[2] !== "mode") {
+      cliInvalid(2, curLine);
+      return;
+    }
+    if (cgModes.indexOf(parts[3]) < 0 || parts[4] && !(vendor !== "dell" && parts[4] === "non-silent" && (parts[3] === "auto" || parts[3] === "desirable") && !parts[5])) {
+      cliInvalid(cgModes.indexOf(parts[3]) < 0 ? 3 : 4, curLine);
+      return;
+    }
+    consolePrint("% Lab note: port channels are not simulated in this lab. The command was recognised, but nothing was configured.", "warn");
     return;
   }
   if (primary === "terminal") {
@@ -37516,6 +37572,43 @@ function runConsoleCommandCore(raw, orig) {
     d.stpMode = parts[2], markChanged(), consolePrint("spanning-tree mode " + parts[2], "ok");
     return;
   }
+  if (primary === "spanning-tree" && parts[1] === "vlan" && parts[2] && parts[3] === "priority") {
+    if (!d) {
+      consolePrint("% Select a device first", "err");
+      return;
+    }
+    const list = parseVlanList(parts[2]);
+    if (!vlanListOk(parts[2]) || !list.length) {
+      cliInvalid(2, curLine);
+      return;
+    }
+    if (!parts[4]) {
+      consolePrint(vendor === "dell" ? "% Error: Incomplete command." : "% Incomplete command.", "err");
+      return;
+    }
+    if (!/^\d{1,5}$/.test(parts[4]) || +parts[4] > 61440) {
+      cliInvalid(4, curLine);
+      return;
+    }
+    if (+parts[4] % 4096) {
+      consolePrint(vendor === "dell" ? "% Error: Priority must be a multiple of 4096." : "% Bridge Priority must be in increments of 4096.", "err");
+      vendor !== "dell" && (consolePrint("% Allowed values are:", "err"), consolePrint(" 0     4096  8192  12288 16384 20480 24576 28672", "err"), consolePrint(" 32768 36864 40960 45056 49152 53248 57344 61440", "err"));
+      return;
+    }
+    if (vendor === "dell") {
+      consolePrint("% Lab note: the priority was checked, but this lab's OS10 spanning-tree view shows one instance and does not change.", "warn");
+      return;
+    }
+    const missing = list.filter((v) => !vlanExists(d, v));
+    if (missing.length) {
+      consolePrint("% Lab note: VLAN " + missing.join(", ") + " does not exist on " + d.name + ". Create it first.", "err");
+      return;
+    }
+    const set = {};
+    for (const v of list) set[v] = +parts[4];
+    d.stpPrio = Object.assign(d.stpPrio || {}, set), markChanged();
+    return;
+  }
   if (primary === "spanning-tree" && parts[1] === "vlan" && parts[2] && parts[3] === "root" && parts[4]) {
     if (!d) {
       consolePrint("% Select a device first", "err");
@@ -37548,7 +37641,7 @@ function runConsoleCommandCore(raw, orig) {
       d.stpPrio = Object.assign(d.stpPrio || {}, set), markChanged(), consolePrint("spanning-tree vlan " + parts[2] + " root " + role + ": priority " + list.map((v) => set[v]).join(", "), "ok");
       return;
     }
-    markChanged(), consolePrint("spanning-tree vlan " + parts[2] + " root " + parts[4] + " (lab note: accepted, but this lesson's Dell spanning-tree view shows one instance and does not change)", "ok");
+    markChanged(), consolePrint("spanning-tree vlan " + parts[2] + " root " + parts[4] + " (lab note: accepted, but this lesson's Dell spanning-tree view shows one instance and does not change)", "warn");
     return;
   }
   if (primary === "spanning-tree" && parts[1] === "portfast" && parts[2] === "default") {
@@ -38082,7 +38175,7 @@ function handleShow(args) {
     return;
   }
   if (joined.startsWith("etherchannel") || joined.startsWith("port-channel")) {
-    consolePrint("Group  Port-channel  Protocol    Ports", ""), consolePrint("(No port-channels configured in this lab topology)", "warn");
+    consolePrint("Group  Port-channel  Protocol    Ports", ""), consolePrint("(Port channels are not simulated in this lab, so none are listed)", "warn");
     return;
   }
   if (joined.startsWith("port-security")) {
