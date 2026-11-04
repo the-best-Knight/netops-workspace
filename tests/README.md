@@ -71,7 +71,7 @@ A test counts as a failure when a check fails or when the page logs a console er
 
 Run that file on its own and read the first `FAIL` line: it prints what the page returned. The browser tests drive the real page with real key presses and mouse events, so a failure usually means something a person would also see.
 
-## Script Repository
+## Script Library
 
 `node tests/engine/scriptrepo.mjs` checks script-byte integrity, show/hide state, clipboard success and fallback, and manual-copy recovery. CI runs it with the other tool tests. `sh tests/run.sh script-repo` covers the real hub/search, Help, show/hide and copy controls. These checks do not execute the PowerShell scanner.
 

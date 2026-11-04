@@ -1,4 +1,4 @@
-// Network Topology Builder: Export > draw.io file. Feeds the tool a small crafted diagram (special characters, parallel links,
+// Topology Builder: Export > draw.io file. Feeds the tool a small crafted diagram (special characters, parallel links,
 // a curved link, a down link, every kind of shape) and checks the .drawio XML it writes.
 // Set DIO_DUMP=/path/file.drawio to also save the file that was produced.
 import { writeFileSync } from 'node:fs';

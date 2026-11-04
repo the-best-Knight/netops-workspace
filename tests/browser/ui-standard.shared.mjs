@@ -39,11 +39,11 @@ export async function run(scheme) {
   await S.load('#toolkit', 2200);
   await S.frame(`d.querySelector('.tab[data-tab="v6"]').click(); w.runV6(); w.loadV6SplitExample(); d.getElementById('v6Mac').value = '00:1A:2B:3C:4D:5E'; w.runV6Eui(); await new Promise(r => setTimeout(r, 300)); return 1;`);
   check('IPv6 calculator', await audit(`d.getElementById('pane-v6')`));
-  // Ping / Traceroute Analyzer with every new kind of card
+  // Connectivity Analyzer with every new kind of card
   await S.load('#ping-analyzer', 2200);
   await S.frame(`d.getElementById('paInput').value = [w.EX_MORE.mtr, w.EX_MORE.pathping, w.EX_MORE.nettest, w.EX_MORE.ps7].join('\\n'); d.getElementById('paAnalyze').click(); await new Promise(r => setTimeout(r, 400)); return 1;`);
   check('Ping Analyzer results', await audit(`d.querySelector('main')`));
-  // Network Fault Lab: the lab list with the Free practice card, then inside free practice, then the new console help
+  // Switch Lab: the lab list with the Free practice card, then inside free practice, then the new console help
   await S.load('#fault-lab', 2500);
   check('Fault Lab lab list', await audit(`d.getElementById('labManager')`));
   await S.frame(`d.querySelector('#labGrid .lab-card.free').click(); await new Promise(r => setTimeout(r, 600)); w.runConsoleCommand('select SW1'); w.runConsoleCommand('?'); w.runConsoleCommand('show interface ethernet 1/1/2'); await new Promise(r => setTimeout(r, 200)); return 1;`);

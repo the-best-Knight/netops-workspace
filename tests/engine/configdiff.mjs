@@ -1,4 +1,4 @@
-// Config Diff regressions (review findings CD-01 and CD-02). Runs the comparison code that ships in index.html.
+// Config Compare regressions (review findings CD-01 and CD-02). Runs the comparison code that ships in index.html.
 import { loadTool } from './tool.mjs';
 import { test, ok, eq, done } from './lib.mjs';
 const T = loadTool('config-diff', ['compare', 'resultsText']);

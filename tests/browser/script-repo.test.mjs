@@ -1,12 +1,12 @@
 import { session } from './lib.mjs';
 const S = await session();
 await S.load();
-S.ok('hub includes the Script Repository', await S.ev(`return !!document.querySelector('.card[data-id="script-repo"]');`));
+S.ok('hub includes the Script Library', await S.ev(`return !!document.querySelector('.card[data-id="script-repo"]');`));
 const result = await S.ev(`const e = document.getElementById('homeSearch'); e.value='Invoke-LabScan'; e.dispatchEvent(new Event('input',{bubbles:true})); await new Promise(r=>setTimeout(r,300)); return document.body.innerText;`);
-S.ok('search finds Free IP Finder by command name', /Script Repository/.test(result));
+S.ok('search finds Free IP Finder by command name', /Script Library/.test(result));
 await S.load('#script-repo');
 let info = await S.frame(`return { title:d.querySelector('h1').textContent, code:d.getElementById('scriptBody').textContent, hidden:d.getElementById('codeWrap').hidden, help:!!d.querySelector('.kit-help'), back:!!d.querySelector('.kit-back') };`);
-S.ok('repository loads with the expected script and integration controls', info.title === 'Script Repository' && info.code.includes('function Invoke-LabScan') && info.help && info.back, info.title);
+S.ok('repository loads with the expected script and integration controls', info.title === 'Script Library' && info.code.includes('function Invoke-LabScan') && info.help && info.back, info.title);
 S.ok('code is initially collapsed', info.hidden);
 await S.frame(`d.getElementById('btnToggle').click(); return 1;`);
 info = await S.frame(`return {hidden:d.getElementById('codeWrap').hidden, expanded:d.getElementById('btnToggle').getAttribute('aria-expanded')};`);
@@ -16,7 +16,7 @@ S.ok('hide code collapses its region', await S.frame(`return d.getElementById('c
 const copied = await S.frame(`let text=''; const old=d.execCommand; d.execCommand=function(cmd){ if(cmd==='copy'){ text=d.querySelector('textarea').value; return true; } return false; }; Object.defineProperty(w.navigator,'clipboard',{configurable:true,value:undefined}); d.getElementById('btnCopy').click(); await Promise.resolve(); const ok=text===d.getElementById('scriptBody').textContent && d.getElementById('btnCopy').textContent==='Copied'; d.execCommand=old; return ok;`);
 S.ok('clipboard fallback copies the complete script', copied);
 await S.frame(`d.querySelector('.kit-help').click(); return 1;`);
-S.ok('Help describes this tool and its version', await S.ev(`return document.getElementById('helpTool').innerText.includes('Script Repository 1.0') && document.getElementById('helpTool').innerText.includes('PowerShell');`));
+S.ok('Help describes this tool and its version', await S.ev(`return document.getElementById('helpTool').innerText.includes('Script Library 1.0') && document.getElementById('helpTool').innerText.includes('PowerShell');`));
 await S.ev(`document.getElementById('helpClose').click(); return 1;`);
 await S.frame(`d.querySelector('.kit-back').click(); return 1;`);
 S.ok('All tools returns to the hub', await S.ev(`return !document.getElementById('hubView').hidden;`));

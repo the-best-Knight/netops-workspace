@@ -1,4 +1,4 @@
-// Network Fault Lab: Dell is the default vendor, "?" works like a real switch, "show interface" prints each vendor's real format.
+// Switch Lab: Dell is the default vendor, "?" works like a real switch, "show interface" prints each vendor's real format.
 import { session } from './lib.mjs';
 const S = await session();
 await S.load('#fault-lab', 2500);

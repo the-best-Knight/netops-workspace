@@ -20,18 +20,18 @@ Inside a block, `</script>` is written `<\/script>` so the block does not end ea
 
 | Block id | Tool | Where to start reading |
 | --- | --- | --- |
-| `src-script-repo` | Script Repository | `SCRIPTS`, then `copyText` and `setCodeVisible` |
+| `src-script-repo` | Script Library | `SCRIPTS`, then `copyText` and `setCodeVisible` |
 | `src-log-sanitizer` | Log Sanitizer | `SANITIZATION_RULES`, then `sanitizeText` |
 | `src-toolkit` | Network Calculator | `runCalc`, `runVlsm` |
 | `src-practice-ref` | Cheat Sheet | `scoreRow`, `findRows` |
-| `src-osi-ref` | OSI & Network Reference | `buildIndex`, `lookup` |
-| `src-config-diff` | Config Diff | `compare`, `myers` |
-| `src-ping-analyzer` | Ping / Traceroute Analyzer | `parsePing`, `parseTrace`, `parseMtr` |
-| `src-topology-builder` | Network Topology Builder | `var NM` (the engine), then `var NS` (the drawing) |
+| `src-osi-ref` | Network Reference | `buildIndex`, `lookup` |
+| `src-config-diff` | Config Compare | `compare`, `myers` |
+| `src-ping-analyzer` | Connectivity Analyzer | `parsePing`, `parseTrace`, `parseMtr` |
+| `src-topology-builder` | Topology Builder | `var NM` (the engine), then `var NS` (the drawing) |
 | `src-dns-lab` | DNS Lab | `query` |
 | `src-routing-lab` | Routing Lab | `bestRoute`, `tracePath` |
 | `src-firewall-lab` | Firewall Rules Lab | `evaluate` |
-| `src-fault-lab` | Network Fault Lab | `runConsoleCommand`, `goalMetNow` |
+| `src-fault-lab` | Switch Lab | `runConsoleCommand`, `goalMetNow` |
 | `src-vsphere-sandbox` | vSphere Sandbox | `baseState` |
 
 Cheat Sheet data lives in the `kit-data` JSON block. `switchCheat` holds the Cisco and Dell OS10 rows side by side, `junosCheat` and the others hold one vendor each, and `os9Cheat` holds Dell OS9. An OS9 row has `os9` (the command), `mode` (CLI mode), `src` (an id in `docs/reviews/2026-11-03-os9-sources.md`), `ver` (`doc`, `index` or `review`), `tags`, and optionally `tip` and `risk: "disrupt"`. To add a row, add its source to that file first. `tests/engine/os9cheat.mjs` checks the rows.
@@ -55,4 +55,4 @@ sh tests/run.sh                  # browser tests in headless Firefox, one file a
 
 The browser tests open `index.html`, click through the tools and check what is on screen. A test that depends on colours is named `*.dark.test.mjs` or `*.light.test.mjs`, so it runs in the right browser theme.
 
-The Script Repository embeds its PowerShell script as text. Its JavaScript only displays and copies that text; executing it is a separate PowerShell action.
+The Script Library embeds its PowerShell script as text. Its JavaScript only displays and copies that text; executing it is a separate PowerShell action.

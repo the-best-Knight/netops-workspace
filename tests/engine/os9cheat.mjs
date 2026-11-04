@@ -103,7 +103,7 @@ test('no Cisco IOS, Dell OS10 or Junos command was removed or changed', () => {
 test('no OS9 key leaked into the OS10 or Cisco rows', () => {
   kit.switchCheat.forEach((b) => b.rows.forEach((r) => { ok(!('os9' in r), 'os9 key in OS10 row ' + r.intent); ['cisco', 'dell'].forEach((v) => ok(!/\b(portmode hybrid|channel-member|port-channel-protocol)\b/.test(r[v] || ''), 'OS9 command in the ' + v + ' column: ' + r.intent)); }));
 });
-test('the Network Fault Lab still simulates OS10 and has no OS9 syntax', () => {
+test('the Switch Lab still simulates OS10 and has no OS9 syntax', () => {
   const lab = /<script type="text\/plain" id="src-fault-lab">([\s\S]*?)<\/script>/.exec(html)[1];
   ['portmode hybrid', 'channel-member', 'port-channel-protocol', 'bridge-priority', 'show lacp', 'show vlt', 'OS9', 'FTOS', 'fortygige', 'hundredgige'].forEach((t) => ok(!new RegExp(t, 'i').test(lab), 'OS9 token in the lab: ' + t));
   ok(/Dell SmartFabric OS10/.test(lab) && /ethernet1\/1\/1/.test(lab), 'lab no longer OS10');

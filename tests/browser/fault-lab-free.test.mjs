@@ -1,4 +1,4 @@
-// Network Fault Lab: Free practice, a working network with no goal, no hints and no quiz, that never touches lab progress.
+// Switch Lab: Free practice, a working network with no goal, no hints and no quiz, that never touches lab progress.
 import { session } from './lib.mjs';
 const S = await session();
 await S.load('#fault-lab', 2500);

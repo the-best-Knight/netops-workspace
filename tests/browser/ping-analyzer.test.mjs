@@ -1,4 +1,4 @@
-// Ping / Traceroute Analyzer: ping, tracert and traceroute still work; mtr, WinMTR, pathping, Test-NetConnection and Test-Connection are read.
+// Connectivity Analyzer: ping, tracert and traceroute still work; mtr, WinMTR, pathping, Test-NetConnection and Test-Connection are read.
 import { session } from './lib.mjs';
 const S = await session();
 await S.load('#ping-analyzer', 2200);

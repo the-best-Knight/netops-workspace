@@ -1,12 +1,12 @@
-# IT Skills Kit
+# NetOps Workspace
 
 [![Check scripts](https://github.com/the-best-Knight/network-skills-kit/actions/workflows/check.yml/badge.svg)](https://github.com/the-best-Knight/network-skills-kit/actions/workflows/check.yml)
 
-Offline networking and IT tools in a single HTML file. Thirteen tools: eight for everyday work and five for practice. No server, no install, and no external requests. Everything runs in your browser.
+**Offline tools for network engineering.** NetOps Workspace (NetOps for short) is a set of networking and IT tools in a single HTML file. Thirteen tools: eight for everyday work and five for practice. No server, no install, and no external requests. Everything runs in your browser.
 
 **[Open it live](https://ianknight.org/tools/network-skills-kit.html)** · **[Download `index.html`](https://raw.githubusercontent.com/the-best-Knight/network-skills-kit/main/index.html)** · [How it was built](https://ianknight.org/projects/it-skills-kit/)
 
-![The IT Skills Kit home screen, listing the work tools and practice labs](docs/screenshots/hub.png)
+![The NetOps Workspace home screen, listing the work tools and practice labs](docs/screenshots/hub.png)
 
 ## What's inside
 
@@ -14,14 +14,14 @@ Offline networking and IT tools in a single HTML file. Thirteen tools: eight for
 
 | Tool | What it does |
 | --- | --- |
-| Script Repository | Copy PowerShell scripts, starting with Free IP Finder (Invoke-LabScan), to run in your own console |
+| Script Library | Copy PowerShell scripts, starting with Free IP Finder (Invoke-LabScan), to run in your own console |
 | Log Sanitizer | Hides IPs, passwords, usernames and other secrets in a log before you share it |
-| OSI & Network Reference | Layers, protocols and ports, plus a symptom-based guide to the likely cause of an outage |
+| Network Reference | Layers, protocols and ports, plus a symptom-based guide to the likely cause of an outage |
 | Network Calculator | Subnet, IPv6, VLSM, supernet, split and ACL wildcard math, bandwidth and hash calculators, converters |
-| Cheat Sheet | Copy-ready switch and router commands (Cisco IOS, Dell OS10, Dell OS9, Junos), ports, terms and error messages. The Dell OS9 sheet is reference only: the Network Fault Lab simulates OS10, not OS9 |
-| Config Diff | Compare two configs and see exactly what changed |
-| Ping / Traceroute Analyzer | Paste ping, traceroute, mtr or pathping output and spot loss and slow hops. Also reads WinMTR, Test-NetConnection and Test-Connection |
-| Network Topology Builder | Draw a network diagram, or build one from device configs, and export it as PNG, SVG, draw.io, JSON or CSV |
+| Cheat Sheet | Copy-ready switch and router commands (Cisco IOS, Dell OS10, Dell OS9, Junos), ports, terms and error messages. The Dell OS9 sheet is reference only: the Switch Lab simulates OS10, not OS9 |
+| Config Compare | Compare two configs and see exactly what changed |
+| Connectivity Analyzer | Paste ping, traceroute, mtr or pathping output and spot loss and slow hops. Also reads WinMTR, Test-NetConnection and Test-Connection |
+| Topology Builder | Draw a network diagram, or build one from device configs, and export it as PNG, SVG, draw.io, JSON or CSV |
 
 **Practice labs**
 
@@ -30,10 +30,10 @@ Offline networking and IT tools in a single HTML file. Thirteen tools: eight for
 | DNS Lab | Offline DNS simulator: dig-style queries, a zone database, broken-record scenarios |
 | Routing Lab | Longest-prefix match, live routing tables, packet path visualization |
 | Firewall Rules Lab | ACL simulator: ordered rules, a packet tester, implicit deny, policy scenarios |
-| Network Fault Lab | Diagnose-and-fix scenarios with a live topology and a practice switch or router console (Dell OS10 or Cisco IOS), plus a free practice network with no goal |
+| Switch Lab | Diagnose-and-fix scenarios with a live topology and a practice switch or router console (Dell OS10 or Cisco IOS), plus a free practice network with no goal |
 | vSphere Sandbox | Practice common vSphere tasks in a safe offline copy |
 
-The Script Repository displays and copies scripts; it does not run them in the browser. Free IP Finder sends network probes when you run the copied script in PowerShell. Nonresponding addresses are candidates to check against DHCP and address records before use.
+The Script Library displays and copies scripts; it does not run them in the browser. Free IP Finder sends network probes when you run the copied script in PowerShell. Nonresponding addresses are candidates to check against DHCP and address records before use.
 
 ## Private by design
 
@@ -51,11 +51,11 @@ Paste a log, config dump, or command output and it redacts sensitive values as y
 - **Reversible.** A dictionary keeps what each placeholder replaced, so a reply that still has the placeholders can be restored in the same session.
 - **Configurable.** Sensitivity presets (Strict, Standard, Technical, Audit-only), detection profiles for Cisco, Dell OS10, VMware/ESXi, Windows/AD and Kubernetes, and your own rules.
 
-## Network Topology Builder
+## Topology Builder
 
 Draw a diagram by hand, or import configs and show output from Cisco, Dell, Palo Alto and VMware ESXi, plus the network commands of Linux and Windows servers, and let it build the diagram. Links are only drawn when the data supports them.
 
-![The Network Topology Builder showing a sample network with a DMZ and a datacenter zone](docs/screenshots/topology-builder.png)
+![The Topology Builder showing a sample network with a DMZ and a datacenter zone](docs/screenshots/topology-builder.png)
 
 ## Using it
 

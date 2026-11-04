@@ -1,4 +1,4 @@
-// Ping / Traceroute Analyzer regressions (review findings PA-01 to PA-03), run from the code in index.html.
+// Connectivity Analyzer regressions (review findings PA-01 to PA-03), run from the code in index.html.
 import { loadTool } from './tool.mjs';
 import { test, ok, eq, done } from './lib.mjs';
 const T = loadTool('ping-analyzer', ['analyze', 'EX_MORE']);

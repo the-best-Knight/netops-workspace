@@ -1,4 +1,4 @@
-// Switch / Network Fault Lab regressions (review findings SW-01 to SW-07): the incident spanning-tree engine, the
+// Switch Lab regressions (review findings SW-01 to SW-07): the incident spanning-tree engine, the
 // incident commands and the ACL rule parser, run from the code in index.html.
 import { loadTool } from './tool.mjs';
 import { test, ok, eq, done } from './lib.mjs';
