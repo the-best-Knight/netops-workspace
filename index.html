@@ -33904,12 +33904,55 @@ function showToast(msg, type) {
   const c = $("toast-container"), t = document.createElement("div");
   t.className = "toast " + (type || ""), t.textContent = msg, c.appendChild(t), setTimeout(() => t.remove(), 3200);
 }
+// Lesson results from two tabs are joined, never replaced: a tab opened earlier must not wipe what another tab saved since.
+// For one lesson the newer lesson revision wins; on a tie this tab's record wins. localStorage cannot lock, so two saves in the same instant can still lose one record; the next save or reload repairs it because every tab re-reads before it writes.
+function mergeProgress(stored, local) {
+  const out = {};
+  [stored, local].forEach(function(src) {
+    Object.keys(src).forEach(function(k) {
+      const cur = out[k], rec = src[k];
+      (!cur || rec.rev >= cur.rev) && (out[k] = rec);
+    });
+  });
+  return out;
+}
+function readStoredProgress() {
+  try {
+    const raw = localStorage.getItem("nfl_progress2");
+    return raw ? cleanProgress(JSON.parse(raw)) : {};
+  } catch {
+    return null;
+  }
+}
 function saveProgress() {
   try {
-    localStorage.setItem("nfl_progress2", JSON.stringify(progress)), localStorage.setItem("nfl_vendor", vendor);
+    let stored = readStoredProgress();
+    if (stored === null) {
+      const raw = localStorage.getItem("nfl_progress2");
+      raw && localStorage.setItem("nfl_progress2_unreadable", raw), stored = {};
+    }
+    progress = mergeProgress(stored, progress);
+    localStorage.setItem("nfl_progress2", JSON.stringify(progress));
   } catch {
   }
 }
+// The Cisco/Dell choice is written only when the learner changes it, never as a side effect of saving a lesson.
+function saveVendor() {
+  try {
+    localStorage.setItem("nfl_vendor", vendor);
+  } catch {
+  }
+}
+window.addEventListener("storage", function(e) {
+  if (e.key !== "nfl_progress2" && e.key !== null) return;
+  const stored = readStoredProgress();
+  if (stored === null) return;
+  progress = mergeProgress(stored, progress);
+  try {
+    updateOverall(), renderLabManager();
+  } catch {
+  }
+});
 function isCompleted(levelId) {
   var r = progress[levelId], l = lessonOf(levelId);
   return !!(r && r.completed && (r.rev || 1) >= (l && l.rev || 1));
@@ -38654,7 +38697,7 @@ function resetLab() {
 }
 document.querySelectorAll("#vendorToggle .vendor-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
-    vendor = btn.dataset.vendor, document.querySelectorAll("#vendorToggle .vendor-btn").forEach((b) => b.classList.toggle("active", b === btn)), lessonTok++, $("quizModal").classList.remove("show"), saveProgress(), updateStatusbar(), $("statVendor").textContent = vendor === "cisco" ? "Cisco" : "Dell", net && (renderTopology(), renderDevicePanel(), renderBrief()), showToast("Vendor set to " + (vendor === "cisco" ? "Cisco" : "Dell"), "success");
+    vendor = btn.dataset.vendor, document.querySelectorAll("#vendorToggle .vendor-btn").forEach((b) => b.classList.toggle("active", b === btn)), lessonTok++, $("quizModal").classList.remove("show"), saveVendor(), updateStatusbar(), $("statVendor").textContent = vendor === "cisco" ? "Cisco" : "Dell", net && (renderTopology(), renderDevicePanel(), renderBrief()), showToast("Vendor set to " + (vendor === "cisco" ? "Cisco" : "Dell"), "success");
   });
 }), $("btnBackToManager").addEventListener("click", exitLab), $("btnHint").addEventListener("click", giveHint), $("btnResetLab").addEventListener("click", resetLab), $("btnCheckGoal").addEventListener("click", checkGoal), $("btnSuccessStay").addEventListener("click", function() {
   $("successModal").classList.remove("show");
@@ -39802,6 +39845,14 @@ function xpLoad() {
   XP.cd = cc;
 }
 function xpSave() {
+  if (XP.persistent) try {
+    var stored = JSON.parse(localStorage.getItem(XP.key) || "{}") || {};
+    Object.keys(stored).forEach(function(k) {
+      var r = stored[k], mine = XP.p && XP.p[k];
+      r && typeof r === "object" && /^10[1-6]$/.test(k) && r.completed && (!mine || !mine.completed && Number(r.rev) >= mine.rev || mine.completed && Number(r.rev) > mine.rev) && (XP.p = XP.p || {}, XP.p[k] = { completed: true, hints: Number(r.hints) || 0, rev: Number(r.rev) || 1, changes: Number(r.changes) || 0, secs: Number(r.secs) || 0 });
+    });
+  } catch (e) {
+  }
   var p = JSON.stringify(XP.p || {}), c = JSON.stringify(XP.cd || {});
   XP.mem = { p: JSON.parse(p), c: JSON.parse(c) };
   if (XP.persistent) {
