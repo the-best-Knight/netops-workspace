@@ -112,4 +112,13 @@ test('the same hostname gets the same placeholder in both forms, and restores', 
   const t = 'host=core.company.tech and later core.company.tech again', r = clean(t); ok(!r.out.includes('core.company'), r.out); eq(r.back, t); eq(new Set(r.out.match(/\[HOST_\d+\]|node-\d+\.example\.net|node-\d+/g)).size, 1, r.out);
 });
 test('words that only look like keywords, and plain versions, are left alone', () => { for (const t of ['version=1.2.3', 'ghost: 1.2.3', 'server: nginx/1.18.0', 'hostname: localhost', 'target=build.sh']) eq(clean(t).out, t); });
+
+console.log('DA-03 passwords typed after other options in Windows and SQL commands');
+test('net use: password after /user: is hidden, user and server too', () => { const r = noLeak('net use Z: \\\\fs01\\share /user:corp\\bob Secr3t99', ['Secr3t99', 'bob', 'fs01']); ok(r.out.startsWith('net use Z: '), r.out); });
+test('net use: quoted password with spaces and punctuation', () => noLeak('net use \\\\fs01\\share /user:corp\\bob "my p@ss;word! 9" /persistent:no', ['my p@ss', 'word! 9']));
+test('net use: password before /user: and options in any order', () => { noLeak('net use Z: \\\\fs01\\share P@ss#1 /user:corp\\bob', ['P@ss#1']); noLeak('net use \\\\fs01\\share /persistent:yes /user:bob Xyz!7q', ['Xyz!7q']); noLeak('net1 use \\\\fs01\\share /user:"corp\\bob" Qw3rty!9 /persistent:no', ['Qw3rty!9']); });
+test('net use: the * prompt, no password and other switches leave the command readable', () => { for (const t of ['net use \\\\fs01\\share /user:bob *', 'net use \\\\fs01\\share /user:bob', 'net use Z: /delete', 'net use Z: \\\\fs01\\share /persistent:yes', 'net use']) { const r = clean(t); ok(!r.out.includes('[SECRET_'), 'false positive: ' + r.out); eq(r.back, t); } });
+test('sqlcmd, osql and bcp -P hide the password; sqlcmd -p (statistics) does not', () => { noLeak('sqlcmd -S db1 -U sa -P Sq1Pass9 -Q "select 1"', ['Sq1Pass9']); noLeak('osql -S db1 -U sa -P "Pa ss;9" -q "x"', ['Pa ss;9']); noLeak('bcp db.dbo.t out t.dat -c -U sa -P Bcp#Pw1', ['Bcp#Pw1']); const t = 'sqlcmd -S db1 -E -p -Q "select 1"'; eq(clean(t).out, t); });
+test('runas has no password argument, psexec -p still works, user names are still replaced', () => { const r = clean('runas /user:corp\\bob cmd'); ok(!r.out.includes('bob') && !r.out.includes('[SECRET_'), r.out); noLeak('psexec \\\\h1 -u corp\\bob -p Ps3xecPw cmd', ['Ps3xecPw', 'bob']); });
+test('the same password gets one placeholder wherever it appears, and restores', () => { const t = 'net use Z: \\\\fs01\\share /user:corp\\bob Secr3t99\nsqlcmd -S db -U sa -P Secr3t99 -Q "x"'; const r = noLeak(t, ['Secr3t99']); eq(new Set(r.out.match(/\[SECRET_\d+\]/g)).size, 1, r.out); });
 done();
