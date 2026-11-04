@@ -18,7 +18,7 @@ node tests/engine/fuzz.mjs 800   # 800 batches of damaged and mixed-up device ou
 ```
 
 ```sh
-for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content; do node tests/engine/$t.mjs; done
+for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content scriptrepo uitokens; do node tests/engine/$t.mjs; done
 ```
 
 These run the other tools' own code, taken from `index.html` with no browser: `tests/engine/tool.mjs` cuts a tool's script out, runs it against a stub page, and hands back the functions a test asks for (`__set` and `__get` reach its other variables). Each file is named for its tool and its checks carry the finding ID of the technical review they came from.
@@ -36,6 +36,7 @@ These run the other tools' own code, taken from `index.html` with no browser: `t
 | `ping` | mtr wording, loss placement, damaged numbers, Windows and Linux MTU failures, router error replies, no contradictory warnings |
 | `lessons` | The access list lesson is fixed by correcting the rule |
 | `content` | Wording claims in the README and the reference data |
+| `uitokens` | Contrast of the shared colours in both themes (4.5:1), the four embedded font files, one UI font and one monospace font, nothing loaded from outside, font-src limited to `data:` |
 
 `tests/engine/load.mjs` cuts the engine out of `index.html` (it is the part of the Topology Builder's script before the drawing code) and runs it with no browser. The inputs are in `tests/fixtures/`: realistic Cisco, Dell, Palo Alto, ESXi, Linux and Windows output written for the tests. The Windows output follows the layout of the real commands but is not captured from a machine.
 
@@ -57,6 +58,7 @@ Needs Firefox. If it is not in a standard place, set `FIREFOX=/path/to/firefox`.
 | `fault-lab-free` | Free practice: a working network, no goal, no hints, never touches progress |
 | `ping-analyzer` | ping, tracert, traceroute, mtr, WinMTR, pathping, Test-NetConnection, Test-Connection |
 | `calculator-ipv6` | IPv6 address parsing and compression, the subnet calculator, split, EUI-64, the hand-over from the IPv4 tab |
+| `ui-design` | The fonts load on the home screen and inside every tool, no gradients except stripes and grids, no shadows on cards and panels, no pill buttons, a visible focus ring, code stays monospace |
 | `topology-drawio` | The `.drawio` export: structure, escaping, shapes, links, no configuration data |
 | `topology-windows-import` | The import dialog lists Windows and Linux, a pasted Windows session builds one server with its team, the switch joins its NICs by MAC, a PC invents no cable |
 | `ui-standard.dark` / `ui-standard.light` | The kit's written UI standard (text of at least 11px, contrast of at least 4.5:1, controls at least 28px) measured on the IPv6 calculator, the analyzer's new cards, and the Fault Lab list and free practice |

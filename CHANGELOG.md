@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Visual refinement. One UI font (IBM Plex Sans) and one monospace font (IBM Plex Mono) are now embedded, Latin subset, woff2, four files, under the SIL Open Font License (docs/FONT-LICENSES.md). The kit still loads nothing from outside the file. Radii are now 4, 6 and 8 px (buttons, fields and tabs were pills with 12 to 26 px corners). Panels, sidebars and bars lost their shadows; only menus, dialogs, toasts and drag keep one. The blue glow shadows in the vSphere Sandbox are gone. The home screen is denser with a smaller heading and a 44 px search field. The Log Sanitizer output heading lines up with the input heading. The Network Calculator menu no longer sits under the header on a phone. No command, simulation or feature changed. New tests: `tests/engine/uitokens.mjs` (contrast of the shared colours in both themes, the font files, no outside references) and `tests/browser/ui-design.test.mjs`.
 - Added Script Repository with the Free IP Finder (Invoke-LabScan) from the supplied older copy. It supports showing the code and copying it for PowerShell, and appears in hub search, the tool switcher and Help. Existing tool sources are retained from main.
 
 - Deep review fixes (finding IDs from docs/reviews/2026-11-03-deep-review.md in brackets):
