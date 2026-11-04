@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Deep audit fixes (finding IDs from docs/reviews/2026-11-04-deep-audit.md; details in docs/reviews/2026-11-04-deep-audit-remediation.md):
+  - Log Sanitizer: a password typed after other options is now hidden in `net use ... /user:name password` and in `sqlcmd`, `osql` and `bcp` with `-P` (DA-03). Sanitizing a log with many different addresses and hosts is about 10 to 20 times faster and no longer slows down with the square of its size; the output is unchanged (DA-02).
+  - Switch Lab: lesson progress from two open tabs is joined instead of replaced, the Cisco/Dell choice is saved only when it is changed, and an open tab updates when another tab saves. Extreme-level progress is joined the same way (DA-01).
+  - Switch Lab: configuration mode no longer hides the lab's own limitation notes. `channel-group`, `interface port-channel` and numbered `access-list` say they are recognised but not simulated and change nothing; Cisco `spanning-tree vlan N priority` works; an `ip route` with no next hop is an incomplete command (DA-04, DA-05).
+  - Tests: `tests/run.sh` picks its own free port, uses its own profile and stops only the Firefox it started. `tests/runner-isolation.sh` checks that (DA-10).
+
 - Main menu: the tools are listed alphabetically inside Work Tools and Practice & Training, and pinning a tool never moves its card. The arrow keys now move between tool cards only and skip the star buttons, which stay in the Tab order and still work with the mouse, Space and Enter. Ctrl + S on a selected card pins or unpins it, announces the change, and is left alone in text fields, dialogs and inside tools. The hub tip and Help describe the keys. Pins keep the same storage key, so existing pins carry over.
 - Rebrand. The product is now NetOps Workspace (NetOps for short), with the subtitle Offline tools for network engineering. Six tools have new visible names: Script Repository is Script Library, OSI & Network Reference is Network Reference, Config Diff is Config Compare, Ping / Traceroute Analyzer is Connectivity Analyzer, Network Topology Builder is Topology Builder, and Network Fault Lab is Switch Lab. Tool IDs, storage keys, source blocks, test file names and the GitHub repository name are unchanged, so saved settings, projects and lab progress carry over. Older entries below keep the names that were current when they were written.
 
