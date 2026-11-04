@@ -21,6 +21,10 @@ for (const [name, t] of [['dark', dark], ['light', light]]) {
   test(`${name}: text on the input well`, () => { const r = ratio(t.text, t.well); ok(r >= 4.5, r.toFixed(2)); });
 }
 
+console.log('Radius tokens');
+test('the radius scale is 8 small, 10 code, 12 controls, 16 cards', () => ok(/--kit-r-sm: 8px;--kit-r: 12px;--kit-r-lg: 16px;--kit-r-code: 10px/.test(base), 'scale'));
+test('the Topology Builder row radius comes from the token', () => ok(/e\.style\.borderRadius = "var\(--kit-r, 12px\)"/.test(html), 'js rule'));
+
 console.log('Fonts');
 test('one UI font and one monospace font are embedded, four faces in all, as woff2', () => {
   ok((fonts.match(/@font-face/g) || []).length === 4, 'face count');

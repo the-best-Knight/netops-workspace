@@ -17,7 +17,7 @@ const audit = (sel) => J(`
     if ((hasBg || hasBorder) && r.height >= 14 && r.width >= 14 && !/^(INPUT|SELECT|OPTION|PROGRESS|TEXTAREA)$/.test(e.tagName)) {
       const rad = px(cs.borderTopLeftRadius); if (rad >= r.height / 2 - 1) continue;
       if (px(cs.borderTopLeftRadius) === 0 && px(cs.borderTopRightRadius) === 0 && !(px(cs.borderBottomLeftRadius))) { if (!cs.borderLeftWidth || px(cs.borderLeftWidth) >= 3) continue; }
-      const ok = [4, 6, 8].some(s => Math.abs(s - rad) <= 1); // the kit's radius scale after the visual refinement: 4, 6 and 8 px
+      const ok = [8, 10, 12, 16].some(s => Math.abs(s - rad) <= 1); // the kit's radius scale: 8 small, 10 code, 12 controls, 16 cards
       if (!ok && !(e.closest('.menu') && rad >= 14)) out.radius.push(e.tagName.toLowerCase() + '.' + String(e.className).split(' ')[0] + ' ' + Math.round(r.height) + 'px r=' + rad);
     }
   }

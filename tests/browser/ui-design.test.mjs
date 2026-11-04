@@ -12,10 +12,12 @@ const audit = String.raw`
     const cs = win.getComputedStyle(e), tag = e.tagName.toLowerCase() + '.' + String(e.className).split(' ')[0] + '#' + e.id;
     if (/gradient/.test(cs.backgroundImage)) grad.push(tag);
     if (cs.boxShadow !== 'none' && /(^|\s)(card|panel|side|sidebar|masthead|statusbar|lab-card|verify)(\s|$)/.test(String(e.className)) && !/inset/.test(cs.boxShadow) && !/0px 0px 0px 1px/.test(cs.boxShadow)) shadow.push(tag + ' ' + cs.boxShadow.slice(0, 40));
-    if (/^(BUTTON|SELECT|INPUT|TEXTAREA)$/.test(e.tagName) && e.type !== 'checkbox' && e.type !== 'radio' && e.type !== 'range' && parseFloat(cs.borderTopLeftRadius) > 10 && Math.abs(r.width - r.height) > 2) pill.push(tag + ' ' + cs.borderTopLeftRadius);
+    if (/^(BUTTON|SELECT|INPUT|TEXTAREA)$/.test(e.tagName) && e.type !== 'checkbox' && e.type !== 'radio' && e.type !== 'range' && parseFloat(cs.borderTopLeftRadius) > 16.5 && Math.abs(r.width - r.height) > 2) pill.push(tag + ' ' + cs.borderTopLeftRadius);
   }
   const mono = [...doc.querySelectorAll('textarea, pre, code')].filter((e) => e.getBoundingClientRect().width).map((e) => win.getComputedStyle(e).fontFamily.split(',')[0].replace(/"/g, ''));
-  return { faces, grad: [...new Set(grad)], shadow: [...new Set(shadow)], pill: [...new Set(pill)], mono: [...new Set(mono)] };`;
+  const R = (sel) => [...new Set([...doc.querySelectorAll(sel)].filter((e) => e.getBoundingClientRect().width).map((e) => Math.round(parseFloat(win.getComputedStyle(e).borderTopLeftRadius))))];
+  const radii = { btn: R('button.btn, .tab, .chip').filter((v) => v < 100), area: R('textarea, pre'), panel: R('.panel, .card, .lab-card, .hol-card, .sidebar') };
+  return { radii, faces, grad: [...new Set(grad)], shadow: [...new Set(shadow)], pill: [...new Set(pill)], mono: [...new Set(mono)] };`;
 
 // the home screen
 await S.load('', 1500);
@@ -25,6 +27,8 @@ S.ok('home: the page text uses IBM Plex Sans', await S.ev(`return /^"?IBM Plex S
 S.ok('home: no gradients', hub.grad.length === 0, hub.grad);
 S.ok('home: cards and panels have no shadow', hub.shadow.length === 0, hub.shadow);
 S.ok('home: buttons and fields are not pills', hub.pill.length === 0, hub.pill);
+const rad = await S.ev(`const r = (s) => parseFloat(getComputedStyle(document.querySelector(s)).borderTopLeftRadius); return { card: r('.card'), chip: r('.chip, .ws-btn, .help-btn'), search: r('.tool-search') };`);
+S.ok('home: cards 12 to 20 px, controls 10 to 14 px (soft, not pills)', rad.card >= 12 && rad.card <= 20 && rad.chip >= 10 && rad.chip <= 14 && rad.search >= 10 && rad.search <= 14, rad);
 S.ok('home: nothing was requested from outside the file', await S.ev(`return performance.getEntriesByType('resource').every((r) => !/^https?:/.test(r.name));`), 0);
 // A headless window never has focus, so :focus-visible cannot match here. Check that the focus-ring rules exist and are at least 2px instead.
 const RINGS = (root) => `let n = 0; for (const ss of ${root}.styleSheets) { try { for (const r of ss.cssRules) { if (r.selectorText && /:focus(-visible|-within)?/.test(r.selectorText) && (/outline:\\s*([\\d.]+)px/.exec(r.cssText) || [0, 0])[1] >= 2) n++; } } catch (e) {} } return n;`;
@@ -39,6 +43,7 @@ for (const id of TOOLS) {
   S.ok(`${id}: gradients only where they carry meaning (stripes, grids, hatching)`, r.grad.every((g) => GRADIENT_OK.test(g)), r.grad);
   S.ok(`${id}: cards and panels have no shadow`, r.shadow.length === 0, r.shadow);
   S.ok(`${id}: buttons and fields are not pills`, r.pill.length === 0, r.pill);
+  S.ok(`${id}: radii stay on the scale (controls 8 to 14 px, text areas tighter than panels)`, r.radii.btn.every((v) => v >= 8 && v <= 14) && r.radii.area.every((v) => v <= 12) && r.radii.panel.every((v) => v >= 8 && v <= 20), r.radii);
   S.ok(`${id}: code and text areas are monospace`, r.mono.every((m) => /Mono|monospace|Menlo|Consolas|SF Mono/.test(m)), r.mono);
 }
 
