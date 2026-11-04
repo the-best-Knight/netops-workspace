@@ -140,3 +140,13 @@ I did not check the syntax against Dell or Cisco documents this time. The Cisco 
 - Unverified: the four OS10 cheat sheet rows in DA-12.
 - The 26 Dell OS9 rows marked `verify` still need checking on a real switch.
 - More valid commands that Switch Lab does not simulate could get the same "recognised, not simulated" message.
+
+## Earlier independent audit
+
+[2026-11-03-independent-audit.md](2026-11-03-independent-audit.md) is a separate audit (finding IDs AU-01 to AU-14) written by the UI review session on 3 November, against `main` as it stood before the rename. It was kept out of the first push and is added here unchanged. Its line "This file is the only addition and is uncommitted" described its state when it was written.
+
+How the six fixes above relate to it. Nothing else in it was worked on, so every other AU finding is still open.
+
+- AU-09 (two tabs overwrite each other's Switch Lab progress): fixed by DA-01. The browser test now reproduces and checks it with two real tabs.
+- AU-02 (Log Sanitizer slow on large pastes): DA-02 removed the slowdown that grows with the number of different values, and the 531 KB case now takes about half a second. The "had not finished after 90 s" figure was not reproduced in the deep audit, and the page itself (as opposed to the engine) was not re-timed on that exact input, so treat AU-02 as partly resolved.
+- AU-05 (Cisco console accepts Dell OS10 syntax) was not changed by the Switch Lab edits above.
