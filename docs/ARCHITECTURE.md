@@ -34,6 +34,8 @@ Inside a block, `</script>` is written `<\/script>` so the block does not end ea
 | `src-fault-lab` | Network Fault Lab | `runConsoleCommand`, `goalMetNow` |
 | `src-vsphere-sandbox` | vSphere Sandbox | `baseState` |
 
+Cheat Sheet data lives in the `kit-data` JSON block. `switchCheat` holds the Cisco and Dell OS10 rows side by side, `junosCheat` and the others hold one vendor each, and `os9Cheat` holds Dell OS9. An OS9 row has `os9` (the command), `mode` (CLI mode), `src` (an id in `docs/reviews/2026-11-03-os9-sources.md`), `ver` (`doc`, `index` or `review`), `tags`, and optionally `tip` and `risk: "disrupt"`. To add a row, add its source to that file first. `tests/engine/os9cheat.mjs` checks the rows.
+
 The first line of each tool's script is a short comment saying what the tool does, with an example.
 
 ## Rules the code follows

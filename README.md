@@ -18,7 +18,7 @@ Offline networking and IT tools in a single HTML file. Thirteen tools: eight for
 | Log Sanitizer | Hides IPs, passwords, usernames and other secrets in a log before you share it |
 | OSI & Network Reference | Layers, protocols and ports, plus a symptom-based guide to the likely cause of an outage |
 | Network Calculator | Subnet, IPv6, VLSM, supernet, split and ACL wildcard math, bandwidth and hash calculators, converters |
-| Cheat Sheet | Copy-ready switch and router commands (Cisco, Dell OS10, Dell OS9, Junos), ports, terms and error messages |
+| Cheat Sheet | Copy-ready switch and router commands (Cisco IOS, Dell OS10, Dell OS9, Junos), ports, terms and error messages. The Dell OS9 sheet is reference only: the Network Fault Lab simulates OS10, not OS9 |
 | Config Diff | Compare two configs and see exactly what changed |
 | Ping / Traceroute Analyzer | Paste ping, traceroute, mtr or pathping output and spot loss and slow hops. Also reads WinMTR, Test-NetConnection and Test-Connection |
 | Network Topology Builder | Draw a network diagram, or build one from device configs, and export it as PNG, SVG, draw.io, JSON or CSV |
