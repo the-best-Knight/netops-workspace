@@ -5070,6 +5070,20 @@ function reuseIfStillTyping(session2, original, type, src) {
   var name = tokenNameOf(meta.replacement);
   return name ? session2.tokRev.set(name, original) : session2.synRev.set(meta.replacement, original), session2.lastAuto[type] = { original, ts: Date.now() }, meta.replacement;
 }
+var TEXT_GRAM = 5, TEXT_GRAM_MIN_LEN = 20000;
+// Whether the input text contains s. Same answer as sourceText.indexOf(s) !== -1. On a large input each new placeholder used to scan the whole text (time grew with the square of the number of different values), so a set of every 5-character piece of the text is built once per run: a string with a piece that is not in the set cannot be in the text, and only the rest are searched.
+function textHas(ctx, s) {
+  var src = ctx.sourceText;
+  if (!src) return false;
+  if (s.length < TEXT_GRAM || src.length < TEXT_GRAM_MIN_LEN) return src.indexOf(s) !== -1;
+  var g = ctx._grams;
+  if (!g) {
+    g = ctx._grams = /* @__PURE__ */ new Set();
+    for (var i = 0, e = src.length - TEXT_GRAM; i <= e; i++) g.add(src.substr(i, TEXT_GRAM));
+  }
+  for (var j = 0, k = s.length - TEXT_GRAM; j <= k; j++) if (!g.has(s.substr(j, TEXT_GRAM))) return false;
+  return src.indexOf(s) !== -1;
+}
 function replacementFor(ctx, original, type, label, auto) {
   var session2 = ctx.session, hit = session2.map.get(original);
   if (hit) return hit.replacement;
@@ -5081,7 +5095,7 @@ function replacementFor(ctx, original, type, label, auto) {
   var lbl = label && TOKEN_LABELS.indexOf(label) !== -1 ? label : type, replacement = null;
   if (TOKEN_TYPES.indexOf(type) !== -1) {
     var n = (session2.counters[lbl] || 0) + 1, srcText = ctx.sourceText;
-    if (typeof srcText == "string") for (var tg = 0; tg < 1e4 && (srcText.indexOf("[" + lbl + "_" + n + "]") !== -1 || srcText.indexOf("<" + lbl + "_" + n + ">") !== -1); tg++) n++;
+    if (typeof srcText == "string") for (var tg = 0; tg < 1e4 && (textHas(ctx, "[" + lbl + "_" + n + "]") || textHas(ctx, "<" + lbl + "_" + n + ">")); tg++) n++;
     session2.counters[lbl] = n;
     var name = lbl + "_" + n;
     replacement = "[" + name + "]", session2.tokRev.set(name, original);
@@ -5091,7 +5105,7 @@ function replacementFor(ctx, original, type, label, auto) {
       session2.counters[type] = idx;
       var cand = makeSynthetic(original, type, idx, ctx);
       if (cand === null) break;
-      cand === original || session2.synRev.has(cand) || ctx.sourceText && ctx.sourceText.indexOf(cand) !== -1 || (replacement = cand);
+      cand === original || session2.synRev.has(cand) || textHas(ctx, cand) || (replacement = cand);
     }
     if (replacement === null) {
       var fn = (session2.counters["TOK" + type] || 0) + 1;
