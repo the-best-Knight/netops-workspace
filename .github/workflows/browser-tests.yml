@@ -15,3 +15,5 @@ jobs:
           node-version: 22
       - name: Run the browser tests in headless Firefox
         run: sh tests/run.sh
+      - name: Check that the test runner is safe next to other runs
+        run: sh tests/runner-isolation.sh

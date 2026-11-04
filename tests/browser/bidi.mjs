@@ -1,7 +1,7 @@
 // Minimal WebDriver BiDi client for headless Firefox (real file:// testing).
 import { writeFileSync } from 'node:fs';
 let ws, nextId = 1; const pending = new Map(); const events = [];
-export async function connect(port = 9333) {
+export async function connect(port = Number(process.env.KIT_BIDI_PORT) || 9333) {
   ws = new WebSocket(`ws://127.0.0.1:${port}/session`);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
   ws.onmessage = (m) => {
