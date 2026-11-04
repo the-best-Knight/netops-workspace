@@ -18,7 +18,7 @@ node tests/engine/fuzz.mjs 800   # 800 batches of damaged and mixed-up device ou
 ```
 
 ```sh
-for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content; do node tests/engine/$t.mjs; done
+for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content scriptrepo os9cheat; do node tests/engine/$t.mjs; done
 ```
 
 These run the other tools' own code, taken from `index.html` with no browser: `tests/engine/tool.mjs` cuts a tool's script out, runs it against a stub page, and hands back the functions a test asks for (`__set` and `__get` reach its other variables). Each file is named for its tool and its checks carry the finding ID of the technical review they came from.
@@ -35,7 +35,8 @@ These run the other tools' own code, taken from `index.html` with no browser: `t
 | `dns` | CNAME with `ANY`, SRV with a root target |
 | `ping` | mtr wording, loss placement, damaged numbers, Windows and Linux MTU failures, router error replies, no contradictory warnings |
 | `lessons` | The access list lesson is fixed by correcting the rule |
-| `content` | Wording claims in the README and the reference data |
+| `content` | Wording claims in the README and the reference data, and the Dell OS9 Quick answer links |
+| `os9cheat` | Dell OS9 cheat sheet rows: structure, sources, OS9-not-OS10 syntax, mode order, disrupts flags, documentation addresses, and that Cisco, OS10 and Junos rows and the OS10 Fault Lab are unchanged |
 
 `tests/engine/load.mjs` cuts the engine out of `index.html` (it is the part of the Topology Builder's script before the drawing code) and runs it with no browser. The inputs are in `tests/fixtures/`: realistic Cisco, Dell, Palo Alto, ESXi, Linux and Windows output written for the tests. The Windows output follows the layout of the real commands but is not captured from a machine.
 
@@ -71,3 +72,5 @@ Run that file on its own and read the first `FAIL` line: it prints what the page
 ## Script Repository
 
 `node tests/engine/scriptrepo.mjs` checks script-byte integrity, show/hide state, clipboard success and fallback, and manual-copy recovery. CI runs it with the other tool tests. `sh tests/run.sh script-repo` covers the real hub/search, Help, show/hide and copy controls. These checks do not execute the PowerShell scanner.
+
+`sh tests/run.sh cheatsheet-os9` checks the Dell OS9 pill, intro, topic chips, search, the All platforms quick answers and hub search in the real page.
