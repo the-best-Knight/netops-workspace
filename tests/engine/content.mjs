@@ -36,4 +36,23 @@ test('every Quick answer line for OS9 points at a real OS9 row', () => {
 test('the OS9 sheet is wired into the picker, the platform list and hub search', () => {
   ok(/data-v="os9" data-modes="switch">Dell OS9</.test(html) && /<option value="os9">Dell OS9</.test(html), 'picker'); ok(/switch: \["dell", "os9", "cisco", "junos"\]/.test(html), 'platform list'); ok(/\["os9", "Dell OS9", d\.os9Cheat\]/.test(html), 'hub search');
 });
+console.log('NetOps Workspace names');
+test('the product and the six renamed tools use the new names, and the old names still find them in search', () => {
+  ok(/<title>NetOps Workspace<\/title>/.test(html) && /Offline tools for network engineering/.test(html), 'product name or subtitle');
+  const want = { 'osi-ref': ['Network Reference', 'osi & network reference'], 'config-diff': ['Config Compare', 'config diff'], 'ping-analyzer': ['Connectivity Analyzer', 'ping traceroute analyzer'], 'topology-builder': ['Topology Builder', 'network topology builder'], 'fault-lab': ['Switch Lab', 'network fault lab'], 'script-repo': ['Script Library', 'script repository'] };
+  for (const [id, [title, oldName]] of Object.entries(want)) {
+    const m = new RegExp('"?id"?:\\s*"' + id + '"[^}]*?"?title"?:\\s*"' + title + '"[^}]*?"?kw"?:\\s*"([^"]*)"').exec(html);
+    ok(m, 'hub entry for ' + id + ' with title ' + title); ok(m[1].includes(oldName), 'old name not searchable for ' + id + ': ' + oldName);
+  }
+});
+test('no old name is shown in a window title, heading, label or the README', () => {
+  const old = /IT Skills Kit|Script Repository|OSI (?:&|&amp;) Network Reference|Config Diff|Ping \/ Traceroute Analyzer|Network Topology Builder|Network Fault Lab/;
+  const shown = [...html.matchAll(/<title>([^<]*)(?:<\\?\/title>)|<h1[^>]*>([^<]*)<|aria-label="([^"]*)"|footer-tip">([^<]*)</g)].map((m) => m[1] || m[2] || m[3] || m[4]);
+  shown.forEach((t) => ok(!old.test(t), 'old name shown: ' + t));
+  ok(!old.test(readme.replace(/ianknight\.org[^\s)]*/g, '')), 'README still uses an old name');
+});
+test('saved settings and tool ids keep their old keys', () => {
+  ['itSkillsKitTheme', 'itSkillsKitThemeFor', 'itSkillsKitLastTool', 'itSkillsKitPins', 'itSkillsKitContinueDismissed'].forEach((k) => ok(html.includes(k), 'storage key lost: ' + k));
+  ['osi-ref', 'config-diff', 'ping-analyzer', 'topology-builder', 'fault-lab', 'script-repo'].forEach((id) => ok(html.includes('id="src-' + id + '"') && html.includes('id: "' + id + '"') || html.includes('"id": "' + id + '"'), 'tool id lost: ' + id));
+});
 done();
