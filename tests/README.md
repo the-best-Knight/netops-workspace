@@ -54,6 +54,7 @@ Needs Firefox. If it is not in a standard place, set `FIREFOX=/path/to/firefox`.
 | File | What it covers |
 | --- | --- |
 | `hub-keys` | Arrow keys on the main menu follow the layout of the cards |
+| `hub-pins` | Alphabetical order of the 13 tools, arrow keys skip the star buttons, Ctrl + S pins and unpins the selected card (and is left alone in text fields and tools), pins survive a reload, Tab still reaches the stars |
 | `branding` | The IK logo is at the top of the hub and every tool, and the banned words appear nowhere |
 | `fault-lab` | Dell is the default, `?` lists commands per mode in alphabetical order, `show interface` output for Cisco and Dell |
 | `fault-lab-free` | Free practice: a working network, no goal, no hints, never touches progress |

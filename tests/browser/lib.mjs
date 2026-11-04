@@ -1,5 +1,5 @@
 // Shared helpers for the browser tests: open the kit in headless Firefox, count checks, print a summary.
-import { connect, topContext, goto, evalIn, setViewport, press, close, logs, shot } from './bidi.mjs';
+import { connect, topContext, goto, evalIn, setViewport, press, chord, close, logs, shot } from './bidi.mjs';
 export const KIT = process.env.KIT || new URL('../../index.html', import.meta.url).href;
 export const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -22,5 +22,5 @@ export async function session({ width = 1500, height = 950 } = {}) {
     console.log(n - bad + '/' + n + ' passed');
     close(); process.exit(bad || errs.length ? 1 : 0);
   };
-  return { ctx, ok, ev, frame, load, finish, wait, press: (k) => press(ctx, k), shot: (p) => shot(ctx, p), setViewport: (w, h) => setViewport(ctx, w, h) };
+  return { ctx, ok, ev, frame, load, finish, wait, press: (k) => press(ctx, k), chord: (k) => chord(ctx, k), shot: (p) => shot(ctx, p), setViewport: (w, h) => setViewport(ctx, w, h) };
 }

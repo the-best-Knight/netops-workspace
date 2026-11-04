@@ -36,3 +36,8 @@ export async function press(context, key) {
   const v = KEYS[key] !== undefined ? KEYS[key] : key;
   await send('input.performActions', { context, actions: [{ type: 'key', id: 'k', actions: [{ type: 'keyDown', value: v }, { type: 'keyUp', value: v }] }] });
 }
+// Ctrl + a key, held the way a keyboard does it. Returns nothing; the page sees a ctrlKey keydown.
+export async function chord(context, key) {
+  const C = '\uE009';
+  await send('input.performActions', { context, actions: [{ type: 'key', id: 'k', actions: [{ type: 'keyDown', value: C }, { type: 'keyDown', value: key }, { type: 'keyUp', value: key }, { type: 'keyUp', value: C }] }] });
+}
