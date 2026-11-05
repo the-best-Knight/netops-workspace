@@ -1,6 +1,6 @@
 # Hands-on improvements: report
 
-Date: 2026-11-04, second pass 2026-11-05. Nothing in this report is pushed. All commits are local on `main`.
+Date: 2026-11-04, second pass 2026-11-05. All 10 commits listed in section 2, up to `848a1d5`, were pushed to `origin/main` on 2026-11-05 as a fast-forward. This line and the last bullet of section 12 were corrected in a later documentation commit.
 
 The second pass finished the items the first pass left open. Rows changed in that pass say so.
 
@@ -193,7 +193,7 @@ Still open after the second pass:
 - `traceroute` typed on a PC still gives the Linux form.
 - The PC prompt in the console is `PC-A#`, not `C:\>`.
 - Keyboard checks are by hand, not automated (headless Firefox limit).
-- Not pushed.
+- Pushed: all 10 commits, final commit `848a1d5`. GitHub Actions on that commit (Check scripts, Browser tests, Trigger site deploy, pages build and deployment) all finished with success.
 
 ## Test results, first pass (on `60b8863`)
 
