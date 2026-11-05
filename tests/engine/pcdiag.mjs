@@ -2,7 +2,7 @@
 // Expected values are written out by hand from each lab's own addressing, not read back from the code under test.
 import { loadTool } from './tool.mjs';
 import { test, ok, eq, done } from './lib.mjs';
-const T = loadTool('fault-lab', ['LEVELS', 'XL', 'runConsoleCommand', 'ensureSession', 'xCmd']);
+const T = loadTool('fault-lab', ['LEVELS', 'XL', 'runConsoleCommand', 'ensureSession', 'xCmd', 'xPing']);
 T.__set('XS', null);
 function lab(id, vendor) {
   const L = T.LEVELS.find((l) => l.id === id), net = L.build();
@@ -52,13 +52,68 @@ console.log('tracert');
 test('tracert follows the gateway to a reachable server in the working lab', () => {
   const net = lab(3); on('pc-a'); const tgt = Object.values(net.devices).find((d) => d.type === 'server');
   const ip = tgt ? Object.values(tgt.ifaces)[0].ip : null; ok(ip, 'lab 3 has a server');
-  const o = run('tracert ' + ip); ok(/Tracing route to .* over a maximum of 30 hops/.test(o), o); ok(/Trace complete\./.test(o)); ok(o.includes(ip), 'the destination is the last hop');
+  const o = run('tracert ' + ip); ok(/Tracing route to .* over a maximum of 30 hops/.test(o), o); ok(/Trace complete\./.test(o)); const last = o.split('\n').filter((l) => /^\s+\d+ /.test(l)).pop() || ''; ok(last.endsWith(ip) || /Request timed out|unreachable/.test(last), 'the last line is the destination, or a timeout, never an invented arrival: ' + last);
 });
 test('tracert to an unknown address is not made to succeed', () => {
   lab(3); on('pc-a'); const o = run('tracert 203.0.113.99'); ok(!/ 203\.0\.113\.99\s*$/m.test(o.split('\n').filter((l) => /^\s+\d+ /.test(l)).join('\n')), 'no invented hop'); ok(/Request timed out|unreachable/.test(o), o);
 });
 test('tracert with no target or an unresolvable name gives a Windows message', () => {
   lab(6); on('pc-a'); ok(/Usage: tracert/.test(run('tracert')), 'usage'); ok(/Unable to resolve target system name nohost\.example\./.test(run('tracert nohost.example')), 'name');
+});
+
+console.log('ping');
+const pingStats = (o) => { const m = /Sent = (\d+), Received = (\d+), Lost = (\d+) \((\d+)% loss\)/.exec(o); return m ? m.slice(1).map(Number) : null; };
+test('ping to the PC gateway: Windows header, four replies with a router TTL, and statistics', () => {
+  const net = lab(6); on('pc-a'); const gw = net.devices['pc-a'].ifaces.eth0.gw, o = run('ping ' + gw);
+  ok(new RegExp('^Pinging ' + gw.replace(/\./g, '\\.') + ' with 32 bytes of data:$', 'm').test(o), o);
+  eq((o.match(new RegExp('^Reply from ' + gw.replace(/\./g, '\\.') + ': bytes=32 time<1ms TTL=255$', 'gm')) || []).length, 4, 'four replies from the Cisco gateway, TTL 255');
+  eq(JSON.stringify(pingStats(o)), JSON.stringify([4, 4, 0, 0])); ok(/Minimum = 0ms, Maximum = 0ms, Average = 0ms/.test(o), o); ok(!/icmp_seq|bytes of data\.$|Success rate/m.test(o), 'no Linux or Cisco ping text');
+});
+test('ping -n and -l change the count and size; a Dell gateway answers with TTL 64', () => {
+  const net = lab(6, 'dell'); on('pc-a'); const gw = net.devices['pc-a'].ifaces.eth0.gw, o = run('ping -n 2 -l 100 ' + gw);
+  eq((o.match(/^Reply from .*bytes=100 time<1ms TTL=64$/gm) || []).length, 2, o); eq(JSON.stringify(pingStats(o)), JSON.stringify([2, 2, 0, 0]));
+});
+test('ping across the router to the other PC: time=1ms and the TTL drops by one per router', () => {
+  const net = lab(6); on('pc-a'); const ip = net.devices['pc-b'].ifaces.eth0.ip, o = run('ping ' + ip); // lab 6 routes PC-A to PC-B through SW1
+  const hops = run('tracert ' + ip).split('\n').filter((l) => /^\s+\d+ /.test(l)); ok(new RegExp(ip.replace(/\./g, '\\.') + '$').test(hops[hops.length - 1]), 'tracert arrives');
+  eq((o.match(new RegExp('^Reply from ' + ip.replace(/\./g, '\\.') + ': bytes=32 time=1ms TTL=' + (128 - (hops.length - 1)) + '$', 'gm')) || []).length, 4, o);
+});
+test('an address in the PC subnet that nobody owns: Destination host unreachable from the PC itself, counted as received', () => {
+  const net = lab(6); on('pc-a'); const me = net.devices['pc-a'].ifaces.eth0.ip, o = run('ping 192.168.10.250');
+  eq((o.match(new RegExp('^Reply from ' + me.replace(/\./g, '\\.') + ': Destination host unreachable\.$', 'gm')) || []).length, 4, o);
+  eq(JSON.stringify(pingStats(o)), JSON.stringify([4, 4, 0, 0]), 'Windows counts these as received'); ok(!/Approximate round trip/.test(o), 'no round-trip times without echo replies');
+});
+test('an address beyond a working gateway that nothing answers: Request timed out, 100% loss', () => {
+  lab(3); on('pc-a'); const o = run('ping 203.0.113.99');
+  eq((o.match(/^Request timed out\.$/gm) || []).length, 4, o); eq(JSON.stringify(pingStats(o)), JSON.stringify([4, 0, 4, 100]));
+});
+test('a shut-down switch port: PING: transmit failed. General failure.', () => {
+  const net = lab(6); on('pc-a'); const pa = net.links.find((l) => l.from === 'pc-a' || l.to === 'pc-a'), sw = pa.from === 'pc-a' ? pa.to : pa.from, port = pa.from === 'pc-a' ? pa.toPort : pa.fromPort;
+  net.devices[sw].ifaces[port].admin = 'down'; const o = run('ping ' + net.devices['pc-a'].ifaces.eth0.gw);
+  eq((o.match(/^PING: transmit failed\. General failure\.$/gm) || []).length, 4, o); eq(JSON.stringify(pingStats(o)), JSON.stringify([4, 0, 4, 100]));
+});
+test('a gateway that does not answer: Destination host unreachable from the PC', () => {
+  const net = lab(6); on('pc-a'); const i = net.devices['pc-a'].ifaces.eth0, g = Object.values(net.devices).find((d) => Object.values(d.ifaces || {}).some((x) => x.ip === i.gw));
+  const gi = Object.values(g.ifaces).find((x) => x.ip === i.gw); gi.admin = 'down'; const o = run('ping 192.168.20.10');
+  ok(new RegExp('^Reply from ' + i.ip.replace(/\./g, '\\.') + ': Destination host unreachable\.$', 'm').test(o) || /General failure|Request timed out/.test(o), o); ok(!/^Reply from 192\.168\.20\.10/m.test(o), 'no reply invented');
+});
+test('ping options and errors read like Windows and change nothing', () => {
+  const net = lab(6); on('pc-a'); const before = JSON.stringify(net.devices);
+  ok(/Usage: ping/.test(run('ping')), 'no target'); ok(/ping -t .* not available/.test(run('ping -t 192.168.10.1')), '-t'); ok(/Bad option -z\./.test(run('ping -z 192.168.10.1')), 'bad option');
+  ok(/Value must be supplied for option -n\./.test(run('ping -n 192.168.10.1')), '-n without a number'); ok(/Bad parameter repeat\./.test(run('ping 192.168.10.1 repeat 5')), 'Cisco syntax');
+  ok(/Ping request could not find host nohost\.example\. Please check the name and try again\./.test(run('ping nohost.example')), 'unknown name'); eq(JSON.stringify(net.devices), before);
+});
+test('ping by name: lab 8 fails to resolve until the DNS server port is fixed, then resolves first', () => {
+  const net = lab(8); on('pc-a'); ok(/could not find host app\.lab\.local/.test(run('ping app.lab.local')), 'the broken lab cannot resolve');
+  // apply the lab's own fix: the DNS server's switch port back into the server VLAN, like the app server's port
+  const port = (dev) => { const l = net.links.find((x) => x.from === dev || x.to === dev); return l.from === dev ? net.devices[l.to].ifaces[l.toPort] : net.devices[l.from].ifaces[l.fromPort]; };
+  const dns = Object.values(net.devices).find((d) => d.records), good = port('srv1'), bad = port(dns.id); for (const k of ['vlan', 'accessVlan', 'mode']) if (k in good) bad[k] = good[k];
+  const ip = dns.records['app.lab.local'], o = run('ping app.lab.local');
+  ok(new RegExp('^Pinging app\\.lab\\.local \\[' + ip.replace(/\./g, '\\.') + '\\] with 32 bytes of data:$', 'm').test(o), o);
+});
+test('tracert by name shows the name and the address, with Windows column widths', () => {
+  const net = lab(3); on('pc-a'); const gw = net.devices['pc-a'].ifaces.eth0.gw, o = run('tracert ' + gw);
+  ok(new RegExp('^  1    <1 ms    <1 ms    <1 ms  ' + gw.replace(/\./g, '\\.') + '$', 'm').test(o), o);
 });
 
 console.log('read-only');
@@ -106,6 +161,22 @@ test('Extreme Mode tracert shows addresses only, never device names or a topolog
     const net = xlab(L), pc = pcs(net)[0]; on(pc.id); const gw = pc.ifaces.eth0.gw, o = run('tracert ' + gw);
     ok(/Tracing route to/.test(o) && /Trace complete\./.test(o), L.title); ok(new RegExp('\\s' + gw.replace(/\./g, '\\.') + '\\s*$', 'm').test(o), L.title + ': the gateway answers as hop 1');
     for (const d of Object.values(net.devices)) ok(!new RegExp('\\b' + d.name.replace(/[-.]/g, '\\$&') + '\\b', 'i').test(o.split('\n').slice(1).join('\n').replace(/Tracing route to.*/, '')), L.title + ': tracert named ' + d.name);
+  }
+});
+test('Extreme Mode ping agrees with the Extreme packet model for every PC and its gateway', () => {
+  for (const L of T.XL) {
+    const net = xlab(L);
+    for (const pc of pcs(net)) {
+      on(pc.id); const gw = pc.ifaces.eth0.gw, o = run('ping ' + gw), want = T.__get('xPing')(net, pc.id, gw).ok;
+      ok(/^Pinging /m.test(o) && /Ping statistics for/.test(o), L.title + ': Windows ping text');
+      eq(/^Reply from [\d.]+: bytes=32/m.test(o), want, L.title + ' ' + pc.name + ' -> gateway');
+    }
+  }
+});
+test('Extreme Mode ping shows addresses only, never device names', () => {
+  for (const L of T.XL) {
+    const net = xlab(L), pc = pcs(net)[0]; on(pc.id); const o = run('ping ' + pc.ifaces.eth0.gw).split('\n').slice(1).join('\n'); // line 1 is the prompt
+    for (const d of Object.values(net.devices)) ok(!new RegExp('\\b' + d.name.replace(/[-.]/g, '\\$&') + '\\b', 'i').test(o), L.title + ': ping named ' + d.name);
   }
 });
 test('Extreme Mode: an unreachable destination times out, and PC changes are refused', () => {

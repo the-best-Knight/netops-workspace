@@ -3,7 +3,8 @@ import { session } from './lib.mjs';
 const S = await session();
 await S.load('#fault-lab', 2500);
 const run = (cmd) => S.frame(`d.getElementById('consoleOut').innerHTML = ''; w.runConsoleCommand(${JSON.stringify(cmd)}); return d.getElementById('consoleOut').innerText.split('\\n').slice(1).join('\\n');`);
-const ping = async (from, ip) => { await run('select ' + from); const o = await run('ping ' + ip); return /Success rate is 100 percent|, 0% packet loss/.test(o) ? 'ok' : /Success rate is 0 percent|100% packet loss|unreachable/i.test(o) ? 'fail' : o; };
+// switches answer in Cisco or Linux (OS10) format, PCs in Windows format; a Windows 'Destination host unreachable' counts as received, so it is a failure here
+const ping = async (from, ip) => { await run('select ' + from); const o = await run('ping ' + ip); return /Success rate is 100 percent|, 0% packet loss|Lost = 0 \(0% loss\)/.test(o) && !/Destination host unreachable|Request timed out/.test(o) ? 'ok' : /Success rate is 0 percent|100% packet loss|100% loss|unreachable|General failure/i.test(o) ? 'fail' : o; };
 
 const m = await S.frame(`const cards = [...d.querySelectorAll('#labGrid .lab-card')]; const free = d.querySelector('#labGrid .lab-card.free'); return { cards: cards.length, total: d.getElementById('statTotal').textContent, free: !!free, last: cards[cards.length - 1] === free, text: free ? free.textContent.replace(/\\s+/g, ' ') : '', role: free && free.getAttribute('role'), tab: free && free.tabIndex, locked: free && free.classList.contains('locked'), completed: d.getElementById('statCompleted').textContent };`);
 S.ok('the lab list has the numbered labs plus a Free practice card at the end', m.cards > Number(m.total) && m.total === '18' && m.free && m.last, m);

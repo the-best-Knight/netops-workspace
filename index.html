@@ -36052,6 +36052,11 @@ function pingOut(target, ok, dup) {
   pingTicks++;
   var d = curDev(), s = selectedDeviceId ? ensureSession(selectedDeviceId) : null, cl = String(curLine || ""), dellSw = isSw(d) && vendor === "dell" || !!d && (d.type === "pc" || d.type === "server");
   learnPing(selectedDeviceId, target);
+  if (winPingShow) {
+    var wps = winPingShow;
+    winPingShow = null, wps.print(wps.text, wps.cls);
+    return;
+  }
   if (dellSw && /\brepeat\b/i.test(cl)) {
     consolePrint("% Error: Invalid input. " + (isSw(d) ? "OS10" : "A host") + " uses Linux ping options, for example: ping -c 2 " + target, "err");
     return;
@@ -36673,9 +36678,9 @@ function winRoutePrint(d) {
   return L.concat(bar, "Persistent Routes:", "  None");
 }
 // hopIps: addresses that answered, in order. ok: the destination answered.
-function winTrace(d, target, hopIps, ok) {
-  var a = winAdapter(d), L = ["", "Tracing route to " + target + " over a maximum of 30 hops", ""], n = 0, ms = function(i) {
-    return i ? String(i).padStart(4) + " ms" : "  <1 ms";
+function winTrace(d, target, hopIps, ok, name) {
+  var a = winAdapter(d), L = ["", "Tracing route to " + (name ? name + " [" + target + "]" : target) + " over a maximum of 30 hops", ""], n = 0, ms = function(i) {
+    return i ? String(i).padStart(6) + " ms" : "    <1 ms";
   };
   hopIps.forEach(function(h, i) {
     n++, L.push(String(n).padStart(3) + ms(i === 0 ? 0 : i) + ms(i === 0 ? 0 : i) + ms(i === 0 ? 0 : i) + "  " + h);
@@ -36688,6 +36693,58 @@ function winTrace(d, target, hopIps, ok) {
   }
   return L.concat("", "Trace complete.");
 }
+// Windows ping from a lab PC. The outcome comes from the PC's own state: link, address, gateway, then the path. In Extreme
+// Mode the path is the Extreme packet model (xPing), the same one tracert and the incident checks use.
+function winTtl(ip, routers) {
+  var o = findDeviceByIp(net, ip), t = o && o.device, base = !t ? 64 : t.type === "pc" || t.type === "server" ? 128 : vendor === "dell" && isSw(t) ? 64 : 255;
+  return Math.max(1, base - routers);
+}
+function winPingCmd(d, args, print) {
+  var n = 4, size = 32, tgt = "", x = currentLevel && currentLevel.extreme;
+  for (var i = 0; i < args.length; i++) {
+    var w = args[i], o = /^[-\/]([a-z])$/i.exec(w), f = o && o[1].toLowerCase();
+    if (f === "t") return print("This lab sends a fixed number of pings, so ping -t (until Ctrl+C) is not available. Use ping -n 10 " + (args[i + 1] || "<address>") + " instead.", "err");
+    if (f === "n" || f === "l" || f === "w" || f === "i") {
+      var v = args[++i];
+      if (!/^\d+$/.test(v || "")) return print("Value must be supplied for option " + w + ".", "err");
+      f === "n" ? n = Math.min(100, Math.max(1, +v)) : f === "l" && (size = Math.min(65500, +v));
+    } else if (f === "4" || f === "a") ;
+    else if (/^[-\/]/.test(w)) return print("Bad option " + w + ".", "err");
+    else if (tgt) return print("Bad parameter " + w + ".", "err");
+    else tgt = w;
+  }
+  if (!tgt) return print("Usage: ping [-n count] [-l size] target_name", "err");
+  var ip = tgt, named = !validIp(tgt);
+  if (named) {
+    var rr = resolveName(net, d.id, tgt);
+    if (!rr.ip) return print("Ping request could not find host " + tgt + ". Please check the name and try again.", "err");
+    ip = rr.ip;
+  }
+  var a = winAdapter(d), mine = a && a.i.ip, gw = a && a.i.gw, local = mine && inSameSubnet(mine, a.i.mask || "255.255.255.0", ip), mode, routers = 0;
+  if (!a || !mine || !winLinkUp(d, a)) mode = "fail";
+  else if (x) {
+    var r = xPing(net, d.id, ip);
+    r.ok ? (mode = "ok", routers = Math.max(0, r.fwd.hops.length - 1)) : mode = local ? r.fwd.ok || r.fwd.hops.length ? "timeout" : "host" : !gw ? "fail" : xPing(net, d.id, gw).ok ? "timeout" : "host";
+  } else {
+    var ok = canPing(net, d.id, ip), dup = !ok && canPing(net, d.id, ip, { ignoreDup: true }), hops = ok && buildTraceHops(net, d.id, ip), ap = aclPath(net, d.id, ip);
+    ap && ap.evals.forEach(function(e) {
+      e.res.rule && (e.res.rule.matches = (e.res.rule.matches || 0) + n);
+    });
+    mode = ok ? "ok" : dup ? "dup" : local ? "host" : !gw || !inSameSubnet(mine, a.i.mask || "255.255.255.0", gw) ? "fail" : canPing(net, d.id, gw) ? "timeout" : "host", routers = hops ? Math.max(0, hops.length - 1) : 0;
+  }
+  var L = ["", "Pinging " + (named ? tgt + " [" + ip + "]" : ip) + " with " + size + " bytes of data:"], got = 0, rtt = 0;
+  for (var k = 0; k < n; k++) {
+    var reply = mode === "ok" || mode === "dup" && k % 2 === 0;
+    reply ? (got++, rtt++, L.push("Reply from " + ip + ": bytes=" + size + " time" + (routers ? "=1ms" : "<1ms") + " TTL=" + winTtl(ip, routers))) : mode === "host" ? (got++, L.push("Reply from " + mine + ": Destination host unreachable.")) : mode === "fail" ? L.push("PING: transmit failed. General failure.") : L.push("Request timed out.");
+  }
+  L.push("", "Ping statistics for " + ip + ":", "    Packets: Sent = " + n + ", Received = " + got + ", Lost = " + (n - got) + " (" + Math.round(100 * (n - got) / n) + "% loss),");
+  rtt && L.push("Approximate round trip times in milli-seconds:", "    Minimum = " + (routers ? 1 : 0) + "ms, Maximum = " + (routers ? 1 : 0) + "ms, Average = " + (routers ? 1 : 0) + "ms");
+  // guided labs: through pingOut, so the lesson Verify log, the coach and the learned-address list see the test like any
+  // other ping. Extreme Mode judges incidents with xPing and prints straight to its console.
+  if (x) return print(L.join("\n"), mode === "ok" ? "ok" : "err");
+  winPingShow = { text: L.join("\n"), cls: mode === "ok" ? "ok" : "err", print }, pingOut(ip, mode === "ok", mode === "dup");
+}
+var winPingShow = null;
 function winHostBlocked(first, rest) {
   var f = first.toLowerCase(), r = (rest[0] || "").toLowerCase().replace(/^-/, "/");
   return /^(netsh|set-netipaddress|new-netipaddress|remove-netipaddress|set-netipinterface|set-dnsclientserveraddress|new-netroute|set-netroute|remove-netroute|set-netadapter|rename-computer)$/.test(f) || f === "ipconfig" && /^\/(release6?|renew6?|registerdns|setclassid6?)$/.test(r) || f === "route" && /^(add|delete|change|-f|\/f)$/.test(r);
@@ -37107,6 +37164,10 @@ function runConsoleCommandCore(raw, orig) {
       consolePrint(winRoutePrint(d).join("\n"), "");
       return;
     }
+    if (w0 === "ping") {
+      winPingCmd(d, wr, consolePrint);
+      return;
+    }
     if (w0 === "tracert" || primary === "tracert") {
       const tgt = wr.filter(function(x) {
         return !/^-/.test(x);
@@ -37130,7 +37191,7 @@ function runConsoleCommandCore(raw, orig) {
         const ai = winAdapter(d);
         ai && ai.i.gw && winLinkUp(d, ai) && canPing(net, d.id, ai.i.gw) && hl.push(ai.i.gw);
       }
-      consolePrint(winTrace(d, tip, hl, ok).join("\n"), ok ? "ok" : "err");
+      consolePrint(winTrace(d, tip, hl, ok, tip !== tgt ? tgt : "").join("\n"), ok ? "ok" : "err");
       return;
     }
   }
@@ -41709,16 +41770,30 @@ function xCmd(raw) {
     });
     return true;
   }
-  var tr = /^(traceroute|tracert)\s+(\d+\.\d+\.\d+\.\d+)$/.exec(low);
-  if (d && tr && tr[1] === "tracert" && winHost(d) && !confMode) {
-    var wp = xPath(net, d.id, tr[2], "echo");
-    winTrace(d, tr[2], wp.hops.map(function(h) {
+  if (d && winHost(d) && !confMode && p[0] === "ping") {
+    winPingCmd(d, line.split(/\s+/).slice(1), xPrint);
+    return true;
+  }
+  var wt = /^tracert(?:\s+-d)?\s+(\S+)$/.exec(low);
+  if (d && wt && winHost(d) && !confMode) {
+    var tip = wt[1], wname = "";
+    if (!validIp(tip)) {
+      var wr2 = resolveName(net, d.id, wt[1]);
+      if (!wr2.ip) {
+        xPrint("Unable to resolve target system name " + wt[1] + ".", "err");
+        return true;
+      }
+      wname = wt[1], tip = wr2.ip;
+    }
+    var wp = xPath(net, d.id, tip, "echo");
+    winTrace(d, tip, wp.hops.map(function(h) {
       return h.ip;
-    }), wp.ok).forEach(function(l) {
+    }), wp.ok, wname).forEach(function(l) {
       xPrint(l, "");
     });
     return true;
   }
+  var tr = /^(traceroute|tracert)\s+(\d+\.\d+\.\d+\.\d+)$/.exec(low);
   if (d && tr && !confMode) {
     xTraceOut(d, tr[2]).forEach(function(l) {
       xPrint(l, "");
