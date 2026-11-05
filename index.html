@@ -22218,7 +22218,7 @@ dialog.nm-dlg {
       return n.kind === "device";
     }).length, auto = nmAuto && nmAuto.on;
     nmxConfirm("Clear the whole topology?", "This removes " + nd + " device" + (nd === 1 ? "" : "s") + " and " + links.length + " link" + (links.length === 1 ? "" : "s") + " from the current canvas. Saved projects, snapshots and exported files are not touched." + (auto ? " The automatic encrypted copy of this canvas is emptied as well." : "") + " You can undo it straight afterwards.", "Clear topology", function() {
-      clearAll(), auto && nmxIdbDel();
+      clearAll(), auto && nmxIdbDelMine();
     });
   }
   function clearAll() {
@@ -28172,7 +28172,9 @@ dialog.nm-dlg {
     }] };
     return kind === "net-health" ? (sensitiveSave(NM.healthReport(nmModel, v, "Network health report"), "network-health-" + stamp() + ".md", "md", "text/markdown;charset=utf-8", "Saved an encrypted health report. Use Open to turn it back into a readable file."), true) : map[kind] ? nmxHasData() ? (sensitiveSave(map[kind][1](), "network-" + map[kind][0] + "-" + stamp() + ".csv", "csv", "text/csv;charset=utf-8", "Saved the " + map[kind][0].replace(/-/g, " ") + " list, encrypted. Use Open to turn it back into a CSV for Excel."), true) : (toast("Import some network data first.", null, null, true), true) : false;
   }
-  var nmAuto = { on: false, pass: "", t: 0, found: null, ok: typeof indexedDB < "u" && !!(window.crypto && crypto.subtle) };
+  // owner: this tab's mark on the copy it keeps. A tab overwrites or deletes only its own copy, or one it restored or
+  // agreed to replace (may), so two open tabs never silently overwrite or delete each other's work.
+  var nmAuto = { on: false, pass: "", t: 0, found: null, ok: typeof indexedDB < "u" && !!(window.crypto && crypto.subtle), owner: Date.now().toString(36) + Math.random().toString(36).slice(2, 10), may: {} };
   function nmxIdb() {
     return new Promise(function(res, rej) {
       try {
@@ -28211,6 +28213,42 @@ dialog.nm-dlg {
       });
     });
   }
+  // permission to replace covers one particular copy (owner and time), never later copies from that tab
+  function nmxCopyKey(rec) {
+    return (rec.owner || "earlier") + ":" + rec.at;
+  }
+  function nmxMine(rec) {
+    return !rec || rec.owner === nmAuto.owner || !!nmAuto.may[nmxCopyKey(rec)];
+  }
+  // read and write in one transaction, so another tab cannot slip a copy in between the check and the write
+  function nmxIdbPutMine(v) {
+    return nmxIdb().then(function(db) {
+      return new Promise(function(res, rej) {
+        var tx = db.transaction("p", "readwrite"), st = tx.objectStore("p"), out = {}, q = st.get("project");
+        q.onsuccess = function() {
+          nmxMine(q.result) ? st.put(Object.assign({}, v, { owner: nmAuto.owner }), "project") : out.conflict = q.result;
+        }, tx.oncomplete = function() {
+          res(out);
+        }, tx.onerror = function() {
+          rej(tx.error);
+        };
+      });
+    });
+  }
+  function nmxIdbDelMine() {
+    return nmxIdb().then(function(db) {
+      return new Promise(function(res, rej) {
+        var tx = db.transaction("p", "readwrite"), st = tx.objectStore("p"), out = {}, q = st.get("project");
+        q.onsuccess = function() {
+          q.result && (nmxMine(q.result) ? (st.delete("project"), out.deleted = true) : out.foreign = true);
+        }, tx.oncomplete = function() {
+          res(out);
+        }, tx.onerror = function() {
+          rej(tx.error);
+        };
+      });
+    });
+  }
   function nmxIdbDel() {
     return nmxIdb().then(function(db) {
       return new Promise(function(res, rej) {
@@ -28226,8 +28264,15 @@ dialog.nm-dlg {
   }
   function nmxAutoSaveNow() {
     return !nmAuto.on || !nmAuto.pass || !hasContent() ? Promise.resolve() : encryptText(nmxProjectText(), nmAuto.pass, "diagram").then(function(env) {
-      return nmxIdbPut({ at: Date.now(), env });
-    }).then(function() {
+      return nmxIdbPutMine({ at: Date.now(), env });
+    }).then(function(r) {
+      if (r && r.conflict) {
+        nmAuto.on = false, nmAuto.pass = "", clearTimeout(nmAuto.t), nmxPaintHist();
+        var e0 = $("nm-auto-state");
+        e0 && (e0.textContent = "Stopped: another tab now keeps the copy in this browser.");
+        toast("Another tab now keeps the copy in this browser, so this tab stopped keeping one rather than overwrite it. Download a project file to keep this tab's work.", null, null, true);
+        return;
+      }
       nmAuto.last = Date.now();
       var e = $("nm-auto-state");
       e && (e.textContent = "Last kept " + nmxClock(nmAuto.last) + ".");
@@ -28243,12 +28288,22 @@ dialog.nm-dlg {
     if (nmAuto.ok) {
       var b = H("div", { class: "nm-auto" }, H("h4", { text: "Keep a copy in this browser" }));
       b.appendChild(H("p", { class: "nm-note", text: "The project file you download is the real save. This is only a convenience: an encrypted copy, locked with a passphrase you choose, is kept in this browser so a closed tab does not lose your work. Nothing is stored unless you turn this on, and the passphrase is never stored." })), nmAuto.on ? b.appendChild(H("div", { class: "nm-row" }, H("span", { id: "nm-auto-state", class: "nm-note", text: nmAuto.last ? "Last kept " + nmxClock(nmAuto.last) + "." : "On. A copy is kept a few seconds after each change." }), H("button", { type: "button", class: "btn nm-mini", text: "Turn off and delete the copy", onclick: function() {
-        nmAuto.on = false, nmAuto.pass = "", clearTimeout(nmAuto.t), nmxIdbDel().then(function() {
-          nmAuto.found = null, nmxPaintHist(), toast("Turned off. The stored copy is deleted.");
+        nmAuto.on = false, nmAuto.pass = "", clearTimeout(nmAuto.t), nmxIdbDelMine().then(function(r) {
+          nmAuto.found = null, nmxPaintHist(), toast(r && r.foreign ? "Turned off. The copy in this browser belongs to another tab and was left as it is." : "Turned off. The stored copy is deleted.");
         }, function() {
           nmxPaintHist();
         });
       } }))) : b.appendChild(H("button", { type: "button", class: "btn", text: "Turn on (encrypted)", onclick: function() {
+        // a copy this tab does not own is replaced only after asking
+        nmxIdbGet().then(function(cur) {
+          if (nmxMine(cur)) return turnOn();
+          nmxConfirm("Replace the copy kept in this browser?", "A copy from " + nmxClock(cur.at) + " is already kept here, by another tab or an earlier visit. Turning this on replaces it with this tab's diagram. To keep it, cancel and restore or download it first.", "Replace it", function() {
+            nmAuto.may[nmxCopyKey(cur)] = true, turnOn();
+          });
+        }, turnOn);
+      } })), box.appendChild(b);
+    }
+    function turnOn() {
         askPassphrase({ mode: "save", title: "Keep an encrypted copy in this browser", text: "Choose a passphrase. You type it again to restore the copy next time. If it is lost, the copy cannot be opened.", ok: "Turn on", failText: "Could not encrypt in this browser.", work: function(pass) {
           return encryptText("{}", pass, "diagram").then(function() {
             return pass;
@@ -28258,7 +28313,6 @@ dialog.nm-dlg {
             nmxPaintHist();
           }), nmxPaintHist());
         });
-      } })), box.appendChild(b);
     }
   }
   function nmxAutosaveProbe() {
@@ -28282,7 +28336,7 @@ dialog.nm-dlg {
         } catch {
           env = null;
         }
-        env && openEncrypted(env, "the copy kept in this browser");
+        env && (nmAuto.may[nmxCopyKey(nmAuto.found)] = true, openEncrypted(env, "the copy kept in this browser"));
       } }), H("button", { type: "button", class: "btn", text: "Delete it", onclick: function() {
         nmxIdbDel().then(function() {
           nmAuto.found = null, nmxFoundPaint(), toast("Deleted the stored copy.");
