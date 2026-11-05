@@ -1,0 +1,133 @@
+Building configuration...
+
+Current configuration : 4210 bytes
+!
+version 17.3
+service timestamps debug datetime msec
+!
+hostname ACCESS-01
+!
+no aaa new-model
+no ip routing
+!
+ip domain name lab.example
+!
+vlan 10
+ name USERS
+vlan 20
+ name VOICE
+vlan 30
+ name SERVERS
+vlan 99
+ name MANAGEMENT
+!
+interface GigabitEthernet1/0/5
+ switchport mode access
+ switchport access vlan 10
+ spanning-tree portfast
+!
+interface GigabitEthernet1/0/12
+ switchport mode access
+ switchport access vlan 10
+ spanning-tree portfast
+!
+interface TenGigabitEthernet1/1/1
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,99
+!
+interface TenGigabitEthernet1/1/2
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,99
+!
+interface Vlan99
+ ip address 10.10.99.21 255.255.255.0
+ no shutdown
+!
+end
+
+ACCESS-01#show lldp neighbors detail
+------------------------------------------------
+Local Intf: Gi1/0/5
+Chassis id: 00aa.bb08.3600
+Port id: eth0
+Port Description: eth0
+System Name: AP-LOBBY
+
+System Description: 
+Lab device
+
+Time remaining: 108 seconds
+System Capabilities: W
+Enabled Capabilities: W
+Management Addresses:
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+Media Attachment Unit type: 30
+Vlan ID: 1
+
+------------------------------------------------
+Local Intf: Gi1/0/12
+Chassis id: 00aa.bb0a.7300
+Port id: eth0
+Port Description: eth0
+System Name: WS-ENG-014
+
+System Description: 
+Lab device
+
+Time remaining: 108 seconds
+System Capabilities: S
+Enabled Capabilities: S
+Management Addresses:
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+Media Attachment Unit type: 30
+Vlan ID: 1
+
+------------------------------------------------
+Local Intf: Te1/1/1
+Chassis id: 0011.2233.1000
+Port id: Te1/1/1
+Port Description: TenGigabitEthernet1/1/1
+System Name: CORE-01
+
+System Description: 
+Lab device
+
+Time remaining: 108 seconds
+System Capabilities: B,R
+Enabled Capabilities: B,R
+Management Addresses:
+    IP: 10.10.99.1
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+Media Attachment Unit type: 30
+Vlan ID: 1
+
+------------------------------------------------
+Local Intf: Te1/1/2
+Chassis id: 0011.2233.1200
+Port id: Te1/1/1
+Port Description: TenGigabitEthernet1/1/1
+System Name: DIST-02
+
+System Description: 
+Lab device
+
+Time remaining: 108 seconds
+System Capabilities: B,R
+Enabled Capabilities: B,R
+Management Addresses:
+    IP: 10.10.99.12
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+Media Attachment Unit type: 30
+Vlan ID: 1
+
+Total entries displayed: 4
+
+ACCESS-01#

@@ -14,7 +14,7 @@ import { wait } from './lib.mjs';
 export { wait };
 export { shot, press, close, logs };
 // the builder opens with a sample network; these tests start from an empty diagram
-export async function clearSample(ctx) { await evalIn(ctx, `(async () => { const w = document.querySelector('iframe').contentWindow; w.confirm = () => true; w.document.getElementById('b-clear').click(); await new Promise(r => setTimeout(r, 400)); return 1; })()`); }
+export async function clearSample(ctx) { await evalIn(ctx, `(async () => { const w = document.querySelector('iframe').contentWindow; w.confirm = () => true; w.document.getElementById('b-clear').click(); await new Promise(r => setTimeout(r, 300)); const ok = w.document.getElementById('nmc-ok'); if (w.document.getElementById('nmcfm').open) ok.click(); await new Promise(r => setTimeout(r, 400)); return 1; })()`); }
 export async function start(w = 1500, h = 950) {
   await connect(); const ctx = await topContext(); await setViewport(ctx, w, h);
   let n = 0, bad = 0;

@@ -68,7 +68,7 @@ const cl2 = await J(`return w.__nmx.nodes().some(n => /SW9/.test(n.name));`);
 ok('...and adds the device', cl2, cl2);
 
 // ---- security: nothing secret anywhere, nothing stored by default ----
-await fr(`d.getElementById('b-clear').click(); await new Promise(r => setTimeout(r, 300)); return 1;`);
+await fr(`d.getElementById('b-clear').click(); await new Promise(r => setTimeout(r, 300)); if (d.getElementById('nmcfm').open) d.getElementById('nmc-ok').click(); await new Promise(r => setTimeout(r, 300)); return 1;`);
 await importText(T, LAB_CFGS() + '\n' + LAB_SESS());
 await fr(`w.__nmx.fit(); d.getElementById('nm-tab-health').click(); await new Promise(r => setTimeout(r, 200)); d.getElementById('nm-tab-hist').click(); await new Promise(r => setTimeout(r, 200)); d.getElementById('nm-tab-props').click(); return 1;`);
 const leak = await J(`const secrets = ${JSON.stringify(SECRETS)}; const body = d.documentElement.innerText + d.documentElement.innerHTML; const x = w.__nmx; const proj = x.project(); const csv = ['csvDevices', 'csvInterfaces', 'csvVlans', 'csvLinks', 'csvDown', 'csvUnresolved'].map(f => x.NM[f](x.model(), x.view())).join('\\n') + x.NM.healthReport(x.model(), x.view()); let store = ''; try { for (const k of Object.keys(w.localStorage)) store += k + '=' + w.localStorage.getItem(k) + '\\n'; for (const k of Object.keys(w.sessionStorage)) store += k + '=' + w.sessionStorage.getItem(k) + '\\n'; } catch (e) {} return { page: secrets.filter(s => body.indexOf(s) >= 0), project: secrets.filter(s => proj.indexOf(s) >= 0), csv: secrets.filter(s => csv.indexOf(s) >= 0), storeHasNetwork: /SW-CORE1|10\\.0\\.99|esx01/.test(store), storeKeys: Object.keys(w.localStorage).length, raw: Object.keys(x.model().raw).length };`);
