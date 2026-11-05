@@ -35138,6 +35138,19 @@ function startLab(id) {
   }
   seenTour || setTimeout(startTour, 400);
 }
+// Leaving mid-lesson throws the lab network away, so the hub (through __kitUnsaved) and "\u2190 Labs" ask first.
+// Nothing to lose means no question: no changes yet, a solved lesson, or a finished Extreme incident.
+function labUnsaved() {
+  if (!currentLevel || !net || !changeCount) return "";
+  if (currentLevel.extreme) return XS && XS.quizOk ? "" : "Leave this Extreme incident? Your changes are not saved, and the incident starts again next time.";
+  if (currentLevel.free) return "Leave free practice? The changes you made are not saved.";
+  return $("problemBanner").classList.contains("solved") ? "" : "Leave this lesson? It is not finished, your changes are not saved, and it starts again next time.";
+}
+window.__kitUnsaved = labUnsaved;
+function exitLabAsk() {
+  var why = labUnsaved();
+  (!why || confirm(why)) && exitLab();
+}
 function exitLab() {
   lastLessonId = currentLevel && !currentLevel.free ? currentLevel.id : null, currentLevel = null, lessonTok++, autoReset(), net = null, confMode = false, confIface = null, confAcl = null, endTour(), $("labWorkspace").classList.remove("active"), $("labManager").classList.add("active"), $("btnBackToManager").hidden = true, $("btnTakeTour").style.display = "none", $("sbLevel").textContent = "\u2014", renderBrief(), renderLabManager();
   var nx = lastLessonId && document.querySelector('#labGrid .lab-card[data-lesson="' + lastLessonId + '"]') || document.querySelector("#labGrid .lab-card.next");
@@ -39200,7 +39213,7 @@ document.querySelectorAll("#vendorToggle .vendor-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     vendor = btn.dataset.vendor, document.querySelectorAll("#vendorToggle .vendor-btn").forEach((b) => b.classList.toggle("active", b === btn)), lessonTok++, $("quizModal").classList.remove("show"), saveVendor(), updateStatusbar(), $("statVendor").textContent = vendor === "cisco" ? "Cisco" : "Dell", net && (renderTopology(), renderDevicePanel(), renderBrief()), showToast("Vendor set to " + (vendor === "cisco" ? "Cisco" : "Dell"), "success");
   });
-}), $("btnBackToManager").addEventListener("click", exitLab), $("btnHint").addEventListener("click", giveHint), $("btnResetLab").addEventListener("click", resetLab), $("btnCheckGoal").addEventListener("click", checkGoal), $("btnSuccessStay").addEventListener("click", function() {
+}), $("btnBackToManager").addEventListener("click", exitLabAsk), $("btnHint").addEventListener("click", giveHint), $("btnResetLab").addEventListener("click", resetLab), $("btnCheckGoal").addEventListener("click", checkGoal), $("btnSuccessStay").addEventListener("click", function() {
   $("successModal").classList.remove("show");
   var i = $("consoleInput");
   i && i.focus();
