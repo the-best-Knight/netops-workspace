@@ -84,9 +84,9 @@ Reproductions are the four tests added in `tests/engine/suite.mjs`.
 
 Not defects, but worth knowing:
 
-- The Dell parser's label still says "Dell OS10 show lldp neighbors" when it read OS9 output. Cosmetic.
+- The Dell LLDP parser labelled OS9 output "Dell OS10". Fixed afterwards in commit b43651b.
 - The hint for unreadable Windows output says Windows output "is not read yet", but Windows parsers exist. It shows only when a Windows output was not recognised, so the wording is misleading.
-- A truncated last row of a status table is dropped silently (the earlier rows are kept). Nothing is invented, but there is no warning.
+- Correction: this report first said a truncated last table row is dropped silently. That was wrong for `show interfaces status`, Dell status and the CDP table, which already warned "Row not understood". The real gaps were: `show ip interface brief` and the Dell LLDP parser warned about nothing, and no parser marked a cut-off table as partial, so interfaces after the cut were marked gone. Fixed afterwards in commit e7f1660.
 
 ## 6. Device identity
 
@@ -152,8 +152,7 @@ Four tests in `tests/engine/suite.mjs` under "Import audit regressions". Run aga
 ## 16. Remaining limitations
 
 - Junos is not read by the new importer. OS9 is read from the configuration only (plus the LLDP table, not advertised).
-- The Dell parser label says OS10 for OS9 LLDP.
-- Truncated final table rows are dropped without a warning.
+- Cut-off rows that still match a row pattern (for example a status row cut inside the Type column) cannot be told from a complete row.
 - Not covered by me: LACP and teaming scenarios, duplicate MACs, VRFs and routes, import rollback, malformed XML/CSV/JSON, large-network browser performance.
 - Test fixtures are written, not captured from real devices. Real firmware differences remain a risk.
 
@@ -161,7 +160,7 @@ Four tests in `tests/engine/suite.mjs` under "Import audit regressions". Run aga
 
 1. Decide how to merge your work copy's Topology Builder changes, then re-run this audit's four tests.
 2. Capture real OS9 and Junos output (lab device, nothing from work) before claiming support.
-3. Add a warning when a table's last row looks cut off.
+3. Add the cut-off check to the remaining table parsers (Cisco LLDP table, VLAN, trunk, MAC table).
 4. Run the 5 to 150 device ladder in the browser and record numbers.
 5. Add LAG, teaming and dual-homing scenarios to the suite.
 
