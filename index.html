@@ -12013,7 +12013,10 @@ tr:hover .cmd-copy,
 .row-ex pre {
   margin: 4px 0 0;
   padding: 8px 10px;
-  max-width: 100%;
+  /* width 0 + min-width 100%: a wide example scrolls inside its box instead of widening the table */
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
   overflow-x: auto;
   font: 11.5px/1.45 "IBM Plex Mono", ui-monospace, Consolas, monospace;
   color: var(--text);
