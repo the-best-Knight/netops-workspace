@@ -18079,6 +18079,7 @@ dialog.nm-dlg {
         }
         if (!(!started || !tidy2(l))) {
           var m = /^(\S+)\s+(\S+)\s+(YES|NO)\s+(\S+)\s+(administratively down|up|down|deleted|\S+)\s+(up|down|\S+)\s*$/i.exec(tidy2(l));
+          m || /^[A-Za-z]{2}[\w/.-]*\d/.test(tidy2(l)) && f.warnings.push("Row not understood: " + tidy2(l).slice(0, 60));
           if (m) {
             var i = P.iface(f, m[1]);
             if (i) {
@@ -18677,6 +18678,7 @@ dialog.nm-dlg {
           // OS9 and OS10 share this table header. Only the port names tell them apart: "Te 0/1" is OS9, "ethernet1/1/1" is OS10.
           toks.length >= 2 && /^[A-Za-z]{2,3}$/.test(toks[0]) && /^\d+(?:\/\d+)+$/.test(toks[1]) && (toks.splice(0, 2, toks[0] + toks[1]), os9Rows++);
           /^(?:ethernet|mgmt)\d+\/\d+\/\d+/i.test(toks[0]) && os10Rows++;
+          toks.length < 3 && /^[A-Za-z]/.test(toks[0]) && f.warnings.push("Row not understood: " + tidy2(l).slice(0, 60));
           if (!(toks.length < 3)) {
             var chassis = toks[toks.length - 1], local = toks[0], rest = toks.slice(1, -1), host = "", port = "";
             U.isMac(chassis) || (chassis = "", rest = toks.slice(1)), rest.length >= 2 ? (host = rest[0], port = rest.slice(1).join(" ")) : rest.length === 1 && (port = rest[0]), /^\(null\)$|^-$/i.test(host) && (host = "");
@@ -19343,6 +19345,21 @@ dialog.nm-dlg {
       }), out.length ? out : [sec];
     }
     var PARTIAL = [/\brunning-config(?:uration)?\s+interface\b/i, /\bshow\s+run(?:ning-config)?\s+(?:interface|int)\b/i, /neighbors?\s+(?!detail\b)[a-z]+\s*\d/i, /\bvlan\s+id\b/i, /\bshow\s+interfaces?\s+(?!status|trunk|switchport|description|counters|summary)[a-z]+\s*\d/i, /\bshow\s+cdp\s+entry\b/i, /\bshow\s+lldp\s+entry\b/i];
+    // If the last line of a table is a row the parser could not read, the paste was probably cut off there.
+    // The valid rows are kept; the section is marked partial so interfaces missing from it are not treated as gone.
+    function flagCutTail(f, text2) {
+      var tail = text2.split("\n").map(tidy2).filter(function(x) {
+        return x && !/^\S+[#>]$/.test(x);
+      }).pop();
+      if (!tail || !f.warnings) return;
+      var key = tail.slice(0, 60);
+      for (var k = 0; k < f.warnings.length; k++) {
+        if (/not understood: /.test(f.warnings[k]) && f.warnings[k].slice(-key.length) === key) {
+          f.warnings[k] = "The last row looks cut off and was not read: " + key + ". The paste may be incomplete, so nothing missing from it is treated as gone.", f.partial = true;
+          return;
+        }
+      }
+    }
     function parseSection(s, id) {
       var sec = { id, file: s.file, line: s.line, cmd: s.cmd, host: s.host, bytes: s.text.length, text: s.text, status: "unrecognised", facts: null, warnings: [] };
       sec.partial = PARTIAL.some(function(re) {
@@ -19357,7 +19374,7 @@ dialog.nm-dlg {
       sec.parser = det.parser.id, sec.vendor = det.parser.vendor, sec.label = det.parser.label, sec.cat = det.parser.cat, sec.score = det.score;
       try {
         var f = det.parser.parse(s.text, { host: s.host, cmd: s.cmd });
-        f.label && (sec.label = f.label), sec.facts = f, sec.warnings = f.warnings || [], f.partial && (sec.partial = true), sec.status = P.useful(f) ? "parsed" : "empty", sec.status === "empty" && (sec.excerpt = P.redact(s.text.split(`
+        flagCutTail(f, NM2.clean(s.text)), f.label && (sec.label = f.label), sec.facts = f, sec.warnings = f.warnings || [], f.partial && (sec.partial = true), sec.status = P.useful(f) ? "parsed" : "empty", sec.status === "empty" && (sec.excerpt = P.redact(s.text.split(`
 `).filter(function(l) {
           return tidy2(l);
         }).slice(0, 3).join(`

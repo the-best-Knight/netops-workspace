@@ -506,5 +506,33 @@ test('an LLDP table does not overwrite the OS recorded from the configuration', 
   ok(byName(m, 'FTOS-1').ifaces['te0/1'].nbrs.length === 1, 'the neighbours reached FTOS-1');
 });
 
+console.log('Truncated and malformed status tables');
+test('a cut-off last row warns, marks the table partial and keeps the valid rows', () => {
+  const NM = fresh(), hdr = 'SW1#show interfaces status\nPort      Name               Status       Vlan       Duplex  Speed Type\n';
+  const ok1 = 'Gi1/0/1   uplink            connected    trunk      a-full a-1000 10/100/1000BaseTX\n', ok2 = 'Gi1/0/2                      notconnect   1          auto   auto   10/100/1000BaseTX\n';
+  const s = NM.parseInputs([{ name: 't', text: hdr + ok1 + ok2 + 'Gi1/0/3   cut off mid-li' }])[0];
+  eq(s.facts.ifaces.map((i) => i.key), ['gi1/0/1', 'gi1/0/2'], 'nothing invented for the cut row'); ok(s.partial, 'partial'); eq(s.warnings.length, 1);
+  ok(/last row looks cut off.*Gi1\/0\/3 cut off mid-li/.test(s.warnings[0]), s.warnings[0]);
+  const v = NM.parseInputs([{ name: 'v', text: hdr + ok1 + ok2 }])[0]; ok(!v.partial && v.warnings.length === 0, 'a complete table has no warning');
+  const mid = NM.parseInputs([{ name: 'm', text: hdr + ok1 + 'Gi1/0/9 garbage row\n' + ok2 }])[0];
+  eq(mid.facts.ifaces.map((i) => i.key), ['gi1/0/1', 'gi1/0/2']); ok(!mid.partial, 'a bad row in the middle is not a cut-off'); ok(/Row not understood: Gi1\/0\/9/.test(mid.warnings[0]), mid.warnings[0]);
+});
+test('the same applies to show ip interface brief, Dell status and Dell LLDP tables', () => {
+  const NM = fresh(), one = (t) => NM.parseInputs([{ name: 't', text: t }])[0];
+  const b = one('SW1#show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol\nVlan1                  10.0.0.1        YES NVRAM  up                    up\nGigabitEthernet1/0/1   unass');
+  eq(b.facts.ifaces.map((i) => i.key), ['vlan1']); ok(b.partial && /cut off/.test(b.warnings[0]), 'ip brief');
+  const d = one('OS10# show interface status\nPort            Description  Status  Speed  Duplex  Mode  Vlan  Tagged-Vlans\nEth 1/1/1       uplink       up      10G    full    T     1     -\nEth 1/1/2       cut');
+  eq(d.facts.ifaces.map((i) => i.key), ['eth1/1/1']); ok(d.partial && /cut off/.test(d.warnings[0]), 'dell status');
+  const l = one(fx('os10-lldp.txt').trimEnd() + '\nethernet1/1/9    S52');
+  eq(l.facts.ifaces.length, 3); ok(l.partial && /cut off/.test(l.warnings[0]), 'dell lldp');
+});
+test('a cut-off table does not mark the interfaces after the cut as gone', () => {
+  const NM = fresh(), hdr = 'SW1#show interfaces status\nPort      Name               Status       Vlan       Duplex  Speed Type\n';
+  const row = (n) => `Gi1/0/${n}   p${n}    connected    1   a-full a-1000 10/100/1000BaseTX\n`;
+  const run = (second) => { const m = NM.newModel(); NM.apply(m, NM.parseInputs([{ name: 'a', text: hdr + row(1) + row(2) + row(3) }]), { at: T0 }); NM.apply(m, NM.parseInputs([{ name: 'b', text: second }]), { at: T0 + H }); return Object.values(m.devices)[0].ifaces['gi1/0/3']; };
+  ok(run(hdr + row(1) + row(2)).gone.status, 'a complete newer table without Gi1/0/3 does mark it missing');
+  ok(!run(hdr + row(1) + row(2) + 'Gi1/0/3 p3 conn').gone.status, 'a cut-off table must not');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed' + (fail ? ': ' + failures.join('; ') : ''));
 process.exit(fail ? 1 : 0);
