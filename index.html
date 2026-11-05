@@ -35032,7 +35032,7 @@ function switchConsoleDevice(id) {
     const out = $("consoleOut");
     if (out && !out.dataset.motd) {
       const d = net && net.devices[id], nm = d ? d.name : id, typ = d ? d.type : "device";
-      d && d.type !== "switch" && d.type !== "l3switch" ? consolePrint("View only: look with show, ping, traceroute or nslookup. Fixes are made on the switches.", "warn") : consolePrint("Type ? or help to list commands.", "sys"), out.dataset.motd = "1";
+      d && d.type !== "switch" && d.type !== "l3switch" ? consolePrint(d.type === "pc" || d.type === "server" ? "View only: look with ipconfig, ipconfig /all, route print, ping, tracert or nslookup. A PC cannot be changed here. Fixes are made on the switches." : "View only: look with show, ping, traceroute or nslookup. Fixes are made on the switches.", "warn") : consolePrint("Type ? or help to list commands.", "sys"), out.dataset.motd = "1";
     }
   } else {
     confMode = false, confIface = null, confAcl = null, $("consoleOut").innerHTML = "";
@@ -35172,10 +35172,10 @@ function resolveIfaceKey(d, name) {
   return null;
 }
 function printFullHelp() {
-  consolePrint("In this lab only switches can be changed. PCs, servers and routers are view only: show, ping, traceroute and nslookup work on them.", "warn"), consolePrint("Vendor: " + (vendor === "dell" ? "Dell OS10-style (ethernet1/1/N)" : "Cisco IOS-style") + " | L1: show interfaces, show logging, clear counters, speed, duplex", "ok"), consolePrint("Modes (Cisco): SW1> is user mode, enable gives SW1#, configure terminal gives SW1(config)#. Config commands only work in config mode; use do show ... from there. Dell OS10 starts at SW1#. write memory saves, reload restarts and loses unsaved changes.", "ok"), consolePrint("Shortcuts: sh run, sh ip int br, sh vlan br, sh int status, conf t or config t, int g0/1 (Dell: int e1/1/1 or int eth 1/1/1), int vlan 10, sw mode trunk, sw acc vlan 10, no shut, shut, en, ex, wr, copy run start. Any word can be shortened as long as it is unique.", "ok"), consolePrint(`Switch Lab CLI: switch-focused Cisco IOS + Dell OS10 subset.
+  consolePrint("In this lab only switches can be changed. PCs, servers and routers are view only: show, ping, traceroute and nslookup work on them, and PCs and servers also answer ipconfig, route print and tracert.", "warn"), consolePrint("Vendor: " + (vendor === "dell" ? "Dell OS10-style (ethernet1/1/N)" : "Cisco IOS-style") + " | L1: show interfaces, show logging, clear counters, speed, duplex", "ok"), consolePrint("Modes (Cisco): SW1> is user mode, enable gives SW1#, configure terminal gives SW1(config)#. Config commands only work in config mode; use do show ... from there. Dell OS10 starts at SW1#. write memory saves, reload restarts and loses unsaved changes.", "ok"), consolePrint("Shortcuts: sh run, sh ip int br, sh vlan br, sh int status, conf t or config t, int g0/1 (Dell: int e1/1/1 or int eth 1/1/1), int vlan 10, sw mode trunk, sw acc vlan 10, no shut, shut, en, ex, wr, copy run start. Any word can be shortened as long as it is unique.", "ok"), consolePrint(`Switch Lab CLI: switch-focused Cisco IOS + Dell OS10 subset.
 
 ATTACH / BASIC
-  select <device>     ping <ip or name>     traceroute <ip or name>     nslookup <name>     enable
+  select <device>     ping <ip or name>     traceroute <ip or name>     nslookup <name>     ipconfig [/all]     route print     tracert <ip or name>     enable
 
 SHOW
   show ip interface brief | show interfaces status | show interfaces <name>   (Dell: show interface ...)
@@ -36384,6 +36384,103 @@ function swPortOut(d, k, iface) {
   p("Appliance trust: none");
   p("");
 }
+// Windows-style host diagnostics. They only read the lab; a PC's address, mask, gateway and DNS come from the scenario and cannot be changed here.
+function winHost(d) {
+  return !!d && (d.type === "pc" || d.type === "server");
+}
+function winMac(d) {
+  var h = macOf(d).replace(/\./g, "").toUpperCase();
+  return h.replace(/(..)(?=.)/g, "$1-");
+}
+function winAdapter(d) {
+  var k = Object.keys(d.ifaces || {}).filter(function(x) {
+    return d.ifaces[x].ip;
+  })[0] || Object.keys(d.ifaces || {})[0];
+  return k ? { key: k, i: d.ifaces[k] } : null;
+}
+function winLinkUp(d, a) {
+  if (a.i.status === "down" || a.i.admin === "down") return false;
+  try {
+    return !listNeighborLinks(d.id).some(function(l) {
+      var far = l.other && l.other.ifaces && l.other.ifaces[l.remotePort];
+      return far && (far.admin === "down" || far.status === "down" || far.errDisabled);
+    });
+  } catch (e) {
+    return true;
+  }
+}
+function winMaskBits(mask) {
+  return String(mask || "255.255.255.0").split(".").reduce(function(n, o) {
+    return n * 256 + (+o || 0);
+  }, 0);
+}
+function winNet(ip, mask) {
+  var m = winMaskBits(mask), v = String(ip).split(".").reduce(function(n, o) {
+    return n * 256 + (+o || 0);
+  }, 0), nw = (v & m) >>> 0, bc = (nw | ~m) >>> 0, q = function(x) {
+    return [x >>> 24, x >>> 16 & 255, x >>> 8 & 255, x & 255].join(".");
+  };
+  return { network: q(nw), broadcast: q(bc) };
+}
+function winIpconfig(d, all) {
+  var a = winAdapter(d), L = ["Windows IP Configuration", ""];
+  if (all) L.push("   Host Name . . . . . . . . . . . . : " + d.name, "   Primary Dns Suffix  . . . . . . . : ", "   Node Type . . . . . . . . . . . . : Hybrid", "   IP Routing Enabled. . . . . . . . : No", "   WINS Proxy Enabled. . . . . . . . : No");
+  L.push("");
+  if (!a) return L.concat("No adapters are configured on " + d.name + ".");
+  L.push("Ethernet adapter " + (a.key === "eth0" ? "Ethernet0" : a.key) + ":", "");
+  if (all) L.push("   Connection-specific DNS Suffix  . : ", "   Description . . . . . . . . . . . : Lab Virtual Ethernet Adapter", "   Physical Address. . . . . . . . . : " + winMac(d), "   DHCP Enabled. . . . . . . . . . . : No", "   Autoconfiguration Enabled . . . . : Yes");
+  else L.push("   Connection-specific DNS Suffix  . : ");
+  if (!winLinkUp(d, a)) {
+    L[L.length - (all ? 5 : 1)] = "   Media State . . . . . . . . . . . : Media disconnected";
+    return L.concat("");
+  }
+  if (!a.i.ip) return L.concat("   Autoconfiguration IPv4 Address. . : (none)", "");
+  L.push("   IPv4 Address. . . . . . . . . . . : " + a.i.ip + (all ? "(Preferred)" : ""), "   Subnet Mask . . . . . . . . . . . : " + (a.i.mask || "255.255.255.0"), "   Default Gateway . . . . . . . . . : " + (a.i.gw || ""));
+  if (all) {
+    var dns = d.dns || [];
+    L.push("   DNS Servers . . . . . . . . . . . : " + (dns[0] || ""));
+    dns.slice(1).forEach(function(x) {
+      L.push("                                       " + x);
+    });
+    L.push("   NetBIOS over Tcpip. . . . . . . . : Enabled");
+  }
+  return L.concat("");
+}
+function winRoutePrint(d) {
+  var a = winAdapter(d), pad = function(x, n) {
+    return String(x).padStart(n);
+  }, row = function(dst, mask, gw, ifc, met) {
+    return pad(dst, 17) + pad(mask, 17) + pad(gw, 16) + pad(ifc, 16) + pad(met, 7);
+  }, bar = "=".repeat(75), L = [bar, "Interface List"];
+  if (a) L.push("  5..." + winMac(d).replace(/-/g, " ").toLowerCase() + " ......Lab Virtual Ethernet Adapter");
+  L.push("  1...........................Software Loopback Interface 1", bar, "", "IPv4 Route Table", bar, "Active Routes:", "Network Destination        Netmask          Gateway       Interface  Metric");
+  if (a && a.i.ip && winLinkUp(d, a)) {
+    var n = winNet(a.i.ip, a.i.mask), ip = a.i.ip, mask = a.i.mask || "255.255.255.0";
+    a.i.gw && L.push(row("0.0.0.0", "0.0.0.0", a.i.gw, ip, 25));
+    L.push(row("127.0.0.0", "255.0.0.0", "On-link", "127.0.0.1", 331), row("127.0.0.1", "255.255.255.255", "On-link", "127.0.0.1", 331), row("127.255.255.255", "255.255.255.255", "On-link", "127.0.0.1", 331), row(n.network, mask, "On-link", ip, 281), row(ip, "255.255.255.255", "On-link", ip, 281), row(n.broadcast, "255.255.255.255", "On-link", ip, 281), row("224.0.0.0", "240.0.0.0", "On-link", "127.0.0.1", 331), row("224.0.0.0", "240.0.0.0", "On-link", ip, 281), row("255.255.255.255", "255.255.255.255", "On-link", "127.0.0.1", 331), row("255.255.255.255", "255.255.255.255", "On-link", ip, 281));
+  } else L.push(row("127.0.0.0", "255.0.0.0", "On-link", "127.0.0.1", 331), row("127.0.0.1", "255.255.255.255", "On-link", "127.0.0.1", 331), row("127.255.255.255", "255.255.255.255", "On-link", "127.0.0.1", 331));
+  return L.concat(bar, "Persistent Routes:", "  None");
+}
+// hopIps: addresses that answered, in order. ok: the destination answered.
+function winTrace(d, target, hopIps, ok) {
+  var a = winAdapter(d), L = ["", "Tracing route to " + target + " over a maximum of 30 hops", ""], n = 0, ms = function(i) {
+    return i ? String(i).padStart(4) + " ms" : "  <1 ms";
+  };
+  hopIps.forEach(function(h, i) {
+    n++, L.push(String(n).padStart(3) + ms(i === 0 ? 0 : i) + ms(i === 0 ? 0 : i) + ms(i === 0 ? 0 : i) + "  " + h);
+  });
+  if (!ok) {
+    if (!hopIps.length) {
+      var same = a && a.i.ip && inSameSubnet(a.i.ip, a.i.mask || "255.255.255.0", target);
+      L.push("  1  " + (a && a.i.ip || "0.0.0.0") + "  reports: Destination " + (same ? "host" : "net") + " unreachable.");
+    } else for (var k = 0; k < 3; k++) L.push(String(++n).padStart(3) + "     *        *        *     Request timed out.");
+  }
+  return L.concat("", "Trace complete.");
+}
+function winHostBlocked(first, rest) {
+  var f = first.toLowerCase(), r = (rest[0] || "").toLowerCase().replace(/^-/, "/");
+  return /^(netsh|set-netipaddress|new-netipaddress|remove-netipaddress|set-netipinterface|set-dnsclientserveraddress|new-netroute|set-netroute|remove-netroute|set-netadapter|rename-computer)$/.test(f) || f === "ipconfig" && /^\/(release6?|renew6?|registerdns|setclassid6?)$/.test(r) || f === "route" && /^(add|delete|change|-f|\/f)$/.test(r);
+}
 function traceLinux(sd) {
   return !!sd && (sd.type === "pc" || sd.type === "server" || vendor === "dell" && isSw(sd));
 }
@@ -36776,10 +36873,60 @@ function runConsoleCommandCore(raw, orig) {
     found ? (switchConsoleDevice(found.id), renderTopology(), renderDevicePanel(), consolePrint("Console attached to " + found.name, "ok")) : consolePrint("% Device not found", "err");
     return;
   }
+  if (winHost(d)) {
+    const wp = cmd.trim().split(/\s+/), w0 = wp[0].toLowerCase().replace(/\/.*$/, ""), wr = wp.slice(1);
+    if (winHostBlocked(wp[0].replace(/\/.*$/, ""), wp[0].indexOf("/") > 0 ? ["/" + wp[0].split("/")[1]] : wr)) {
+      consolePrint("% " + d.name + " is read-only in this lab. Its address, mask, gateway, DNS and routes come from the scenario and cannot be changed from the PC. Find the cause on the switches or the router and fix it there.", "err");
+      return;
+    }
+    if (w0 === "ipconfig") {
+      const flag = (wp[0].indexOf("/") > 0 ? wp[0].slice(wp[0].indexOf("/")) : wr[0] || "").toLowerCase().replace(/^-/, "/");
+      if (flag && flag !== "/all" || wr.length > 1) {
+        consolePrint("The syntax of this command is: ipconfig [/all]. This lab shows only ipconfig and ipconfig /all.", "err");
+        return;
+      }
+      consolePrint(winIpconfig(d, flag === "/all").join("\n"), "");
+      return;
+    }
+    if (w0 === "route") {
+      if ((wr[0] || "").toLowerCase() !== "print" || wr.length > 1) {
+        consolePrint("The syntax of this command is: route print. This lab shows only the routing table.", "err");
+        return;
+      }
+      consolePrint(winRoutePrint(d).join("\n"), "");
+      return;
+    }
+    if (w0 === "tracert" || primary === "tracert") {
+      const tgt = wr.filter(function(x) {
+        return !/^-/.test(x);
+      })[0];
+      if (!tgt) {
+        consolePrint("Usage: tracert [-d] target_name", "err");
+        return;
+      }
+      let tip = tgt;
+      if (!validIp(tip)) {
+        const rr = resolveName(net, d.id, tgt);
+        if (!rr.ip) {
+          consolePrint("Unable to resolve target system name " + tgt + ".", "err");
+          return;
+        }
+        tip = rr.ip;
+      }
+      const hops = buildTraceHops(net, d.id, tip), ok = !!hops;
+      let hl = hops || [];
+      if (!ok) {
+        const ai = winAdapter(d);
+        ai && ai.i.gw && winLinkUp(d, ai) && canPing(net, d.id, ai.i.gw) && hl.push(ai.i.gw);
+      }
+      consolePrint(winTrace(d, tip, hl, ok).join("\n"), ok ? "ok" : "err");
+      return;
+    }
+  }
   if (d && d.type !== "switch" && d.type !== "l3switch" && !/^(show|ping|traceroute|tracert|nslookup|enable|disable|end|exit|write|wr|copy|do)$/.test(primary)) {
     coachRefused = d.name;
     const sws = Object.values(net.devices).filter((x) => x.type === "switch" || x.type === "l3switch").map((x) => x.name), kind = d.type === "pc" ? "PC" : d.type === "server" ? "server" : d.type === "router" ? "router" : d.type;
-    consolePrint("% " + d.name + " is a " + kind + " and is view only in this lab. You can look at it (show, ping, traceroute, nslookup). Fixes are made on switches" + (sws.length ? ": " + sws.join(", ") + ". Try: select " + sws[0] : "") + ".", "err");
+    consolePrint("% " + d.name + " is a " + kind + " and is view only in this lab. You can look at it (show, ping, traceroute, nslookup" + (d.type === "pc" || d.type === "server" ? ", ipconfig, route print, tracert" : "") + "). Fixes are made on switches" + (sws.length ? ": " + sws.join(", ") + ". Try: select " + sws[0] : "") + ".", "err");
     return;
   }
   if (cliGate(parts, orig, d)) return;
@@ -41352,6 +41499,15 @@ function xCmd(raw) {
     return true;
   }
   var tr = /^(traceroute|tracert)\s+(\d+\.\d+\.\d+\.\d+)$/.exec(low);
+  if (d && tr && tr[1] === "tracert" && winHost(d) && !confMode) {
+    var wp = xPath(net, d.id, tr[2], "echo");
+    winTrace(d, tr[2], wp.hops.map(function(h) {
+      return h.ip;
+    }), wp.ok).forEach(function(l) {
+      xPrint(l, "");
+    });
+    return true;
+  }
   if (d && tr && !confMode) {
     xTraceOut(d, tr[2]).forEach(function(l) {
       xPrint(l, "");

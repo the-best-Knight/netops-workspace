@@ -18,7 +18,7 @@ node tests/engine/fuzz.mjs 800   # 800 batches of damaged and mixed-up device ou
 ```
 
 ```sh
-for t in sanitizer configdiff calculator routing switching switchlab vsphere dns ping lessons content scriptrepo os9cheat uitokens progress; do node tests/engine/$t.mjs; done
+for t in sanitizer configdiff calculator routing switching switchlab pcdiag vsphere dns ping lessons content scriptrepo os9cheat uitokens progress; do node tests/engine/$t.mjs; done
 ```
 
 These run the other tools' own code, taken from `index.html` with no browser: `tests/engine/tool.mjs` cuts a tool's script out, runs it against a stub page, and hands back the functions a test asks for (`__set` and `__get` reach its other variables). Each file is named for its tool and its checks carry the finding ID of the technical review they came from.
