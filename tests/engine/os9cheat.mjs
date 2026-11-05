@@ -115,7 +115,8 @@ test('the Cheat Sheet adds no outside request', () => {
   ok(/default-src 'none'/.test(sheet) && !/connect-src/.test(sheet), 'content security policy changed');
 });
 test('the page keeps the OS9 pill beside OS10, Cisco and Junos', () => {
-  ['ps', 'cmd', 'dell', 'os9', 'cisco', 'junos', 'linux', 'proxmox', 'esxi', 'nsx', 'vxrail'].forEach((v) => ok(new RegExp('data-v="' + v + '" data-modes=').test(html), 'pill ' + v));
+  ['ps', 'dell', 'os9', 'cisco', 'junos', 'linux', 'rhel', 'proxmox', 'esxi', 'nsx', 'vxrail'].forEach((v) => ok(new RegExp('data-v="' + v + '" data-modes=').test(html), 'pill ' + v));
+  ok(!/data-v="cmd" data-modes=/.test(html), 'Command Prompt is no longer a navigation choice');
   ok(/data-v="dell" data-modes="switch">Dell OS10</.test(html) && /data-v="os9" data-modes="switch">Dell OS9</.test(html), 'labels');
 });
 done();
