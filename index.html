@@ -17544,7 +17544,7 @@ dialog.nm-dlg {
       if (/\b(PA-\d|Palo Alto|PAN-OS)/i.test(p) || /(^|[-_])(pa|fw|firewall)[-_0-9a-z]*$/i.test(n) || /\b(ASA|Firepower|FPR|FortiGate|SRX)/i.test(p)) return "firewall";
       if (/\b(esxi?|vmware|esx\d)\b/i.test(p + " " + n) || /^esx/i.test(n)) return "esxi";
       var R = has("Router", "R"), S = has("Switch", "S") || has("Bridge", "B");
-      return R && S && !/\b(ISR|ASR|CSR)/i.test(p) ? "core" : R || /\b(ISR|ASR|CSR|RTR)/i.test(p) || /(^|[-_])(rtr|router)/i.test(n) ? "router" : S || /(^|[-_])(sw|switch)/i.test(n) || /\b(WS-C|C9\d{3}|N\d{4}|Catalyst|Nexus)/i.test(p) ? "switch" : has("Host", "H") || has("Station", "S") || has("Telephone", "T") || has("Phone", "P") ? "server" : "unknown";
+      return R && S && !/\b(ISR|ASR|CSR)/i.test(p) ? "core" : R || /\b(ISR|ASR|CSR|RTR)/i.test(p) || /(^|[-_])(rtr|router)/i.test(n) ? "router" : S || /(^|[-_])(sw|switch)/i.test(n) || /\b(WS-C|C9\d{3}|N\d{4}|Catalyst|Nexus)/i.test(p) ? "switch" : has("WLAN", "W") ? "ap" : has("Telephone", "T") || has("Phone", "P") ? "phone" : has("Station", "E") ? "endpoint" : has("Host", "H") ? "server" : "unknown";
     }
     NM2.guessKind = guessKind, NM2.newModel = function() {
       return { v: 1, seq: 0, rev: 0, devices: /* @__PURE__ */ Object.create(null), sources: [], imports: [], held: [], raw: /* @__PURE__ */ Object.create(null), manual: { dev: /* @__PURE__ */ Object.create(null), link: /* @__PURE__ */ Object.create(null), added: [], review: /* @__PURE__ */ Object.create(null) }, settings: { staleHours: 24 } };
@@ -19319,7 +19319,7 @@ dialog.nm-dlg {
     } });
   })(NM), (function(NM2) {
     "use strict";
-    var U = NM2.util, P = NM2.p, tidy2 = U.tidy, hostShort = NM2.hostShort, KIND_NAMES = { idrac: "iDRAC", ilo: "iLO", esxi: "ESXi host", firewall: "firewall", router: "router", core: "L3 switch", switch: "switch", server: "server", vm: "virtual machine", unknown: "unknown" };
+    var U = NM2.util, P = NM2.p, tidy2 = U.tidy, hostShort = NM2.hostShort, KIND_NAMES = { idrac: "iDRAC", ilo: "iLO", esxi: "ESXi host", firewall: "firewall", router: "router", core: "L3 switch", switch: "switch", server: "server", vm: "virtual machine", ap: "access point", phone: "IP phone", endpoint: "end device", unknown: "unknown" };
     NM2.KIND_NAMES = KIND_NAMES;
     function subSplit(sec) {
       if (sec.cmd) return [sec];
@@ -19498,7 +19498,7 @@ dialog.nm-dlg {
           m && addUnique(nd.macs, m);
         }), n.name && !macName && noteName(nd, n.name, 1), n.platform && !nd.platform && (nd.platform = String(n.platform).replace(/^cisco\s+/i, "").slice(0, 60));
         var k = NM2.guessKind((n.caps || []).map(function(c) {
-          return { router: "R", switch: "S", bridge: "B", host: "H", station: "S", phone: "T" }[c] || "";
+          return { router: "R", switch: "S", bridge: "B", host: "H", station: "E", phone: "T", "wlan ap": "W" }[c] || "";
         }).join(" "), n.platform || "", n.name || "");
         (/vmware/i.test(n.platform || "") || /\bvmnic|esx/i.test((n.rport || "") + " " + (n.name || ""))) && (k = /esx/i.test(n.name || n.platform) ? "esxi" : k), /idrac|integrated dell remote/i.test((n.name || "") + " " + (n.platform || "") + " " + (n.rdesc || "")) && (k = "idrac"), /\bilo\b|integrated lights/i.test((n.name || "") + " " + (n.platform || "") + " " + (n.rdesc || "")) && (k = "ilo"), setKind(nd, k, 1, "reported by neighbour discovery");
       }
@@ -26060,7 +26060,7 @@ dialog.nm-dlg {
       all.push(s);
     }), NM.gcPool(all);
   }
-  var NMX_TYPE = { firewall: "firewall", router: "router", core: "core", switch: "switch", esxi: "esxi", idrac: "bmc", ilo: "bmc", server: "server", vm: "vm", mgmt: "mgmt" };
+  var NMX_TYPE = { firewall: "firewall", router: "router", core: "core", switch: "switch", esxi: "esxi", idrac: "bmc", ilo: "bmc", server: "server", vm: "vm", mgmt: "mgmt", ap: "custom", phone: "custom", endpoint: "client" };
   function nmxTypeFor(d) {
     return NMX_TYPE[d.kind] || "custom";
   }
@@ -26306,13 +26306,92 @@ dialog.nm-dlg {
       a == null || b == null || a === b || (adj[a].indexOf(b) < 0 && adj[a].push(b), adj[b].indexOf(a) < 0 && adj[b].push(a));
     }), { idx, adj };
   }
+  // End devices that hang off one switch sit in a row directly under it, on the side away from the links that go further down,
+  // so they stay next to their switch and do not sit in the way of the switch-to-switch links.
   function nmxLayered(list) {
+    var G = nmxGraph(list), rk = function(n) {
+      var r = NMX_RANK[n.type];
+      return r == null ? 3.5 : r;
+    }, leaf = list.map(function(n, i) {
+      var a2 = G.adj[i];
+      return a2.length === 1 && G.adj[a2[0]].length > 1 && rk(n) >= 3.5 && rk(n) >= rk(list[a2[0]]);
+    }), infra = list.filter(function(n, i) {
+      return !leaf[i];
+    });
+    if (!infra.length || infra.length === list.length) return nmxLayeredCore(list);
+    var base = nmxLayeredCore(infra), at = /* @__PURE__ */ Object.create(null), ys = [], STEP = DEV_H + 48, S = DEV_W + 24;
+    base.forEach(function(o) {
+      at[o.n.id] = o, ys.indexOf(o.y) < 0 && ys.push(o.y);
+    }), ys.sort(function(a2, b2) {
+      return a2 - b2;
+    });
+    var kids = /* @__PURE__ */ Object.create(null), hasLeaves = /* @__PURE__ */ Object.create(null);
+    list.forEach(function(n, i) {
+      if (leaf[i]) {
+        var par = list[G.adj[i][0]];
+        (kids[par.id] = kids[par.id] || []).push(n), hasLeaves[at[par.id].y] = true;
+      }
+    });
+    var extra = /* @__PURE__ */ Object.create(null), add = 0;
+    ys.forEach(function(y) {
+      extra[y] = add, hasLeaves[y] && (add += STEP);
+    });
+    var out = base.map(function(o) {
+      return { n: o.n, x: o.x, y: o.y + extra[o.y] };
+    }), row = [];
+    Object.keys(kids).forEach(function(pid) {
+      var po = at[pid], cx = po.x + DEV_W / 2, py = po.y + extra[po.y], down = [];
+      G.adj[list.indexOf(po.n)].forEach(function(w) {
+        var q = at[list[w].id];
+        q && q.y > po.y && down.push(q.x + DEV_W / 2);
+      });
+      var side = down.length ? cx <= down.reduce(function(a2, b2) {
+        return a2 + b2;
+      }, 0) / down.length ? -1 : 1 : 0, ks = kids[pid].slice().sort(function(a2, b2) {
+        return a2.name.toLowerCase() < b2.name.toLowerCase() ? -1 : 1;
+      });
+      ks.forEach(function(k, i) {
+        row.push({ n: k, c: side ? cx + side * (DEV_W * 0.8 + i * S) : cx - (ks.length - 1) * S / 2 + i * S, y: py + STEP });
+      });
+    });
+    var byY = /* @__PURE__ */ Object.create(null);
+    row.forEach(function(r) {
+      (byY[r.y] = byY[r.y] || []).push(r);
+    }), Object.keys(byY).forEach(function(y) {
+      var r = byY[y].sort(function(a2, b2) {
+        return a2.c - b2.c;
+      });
+      r.forEach(function(it, i) {
+        i && it.c < r[i - 1].c + S && (it.c = r[i - 1].c + S);
+      });
+      r.forEach(function(it) {
+        out.push({ n: it.n, x: it.c - DEV_W / 2, y: it.y });
+      });
+    });
+    var mn = Math.min.apply(null, out.map(function(o) {
+      return o.x;
+    }));
+    return mn < 0 && out.forEach(function(o) {
+      o.x -= mn;
+    }), out;
+  }
+  function nmxLayeredCore(list) {
     var G = nmxGraph(list), n = list.length, rank = list.map(function(x) {
       var r = NMX_RANK[x.type];
       return r ?? 3.5;
     }), deg = G.adj.map(function(a) {
       return a.length;
     }), comp = new Array(n).fill(-1), comps = [], i, j;
+    // Layout only: when switches of one kind are named core / distribution / access, that order breaks the tie between rows.
+    // It never changes what a device is called or what kind it is.
+    var tier = list.map(function(x) {
+      return /(^|[-_. ])(core|cr\d)/i.test(x.name) ? 0 : /(^|[-_. ])(dist|distribution|agg|dsw)/i.test(x.name) ? 1 : /(^|[-_. ])(acc|access|edge|asw)/i.test(x.name) ? 2 : -1;
+    }), seen = {};
+    tier.forEach(function(t, k) {
+      t >= 0 && rank[k] >= 2 && rank[k] <= 3 && (seen[t] = 1);
+    }), Object.keys(seen).length >= 2 && tier.forEach(function(t, k) {
+      rank[k] >= 2 && rank[k] <= 3 && (rank[k] = 2 + (t >= 0 ? t : 1.5) * 0.1);
+    });
     for (i = 0; i < n; i++) if (comp[i] < 0) {
       var st = [i], c = [];
       for (comp[i] = comps.length; st.length; ) {
@@ -26355,9 +26434,15 @@ dialog.nm-dlg {
       var layer = {};
       order.forEach(function(u2) {
         layer[u2] = 0;
-      }), order.forEach(function(u2) {
+      });
+      // Switches of the same kind, the same distance from the top and the same number of links are peers: a link between them
+      // keeps them on one row (two distribution switches linked to each other), instead of making one the parent of the other.
+      var peer = function(u2, w) {
+        return rank[u2] === rank[w] && dist[u2] === dist[w] && deg[u2] === deg[w];
+      };
+      for (var again = 0; again < 4; again++) order.forEach(function(u2) {
         G.adj[u2].forEach(function(w) {
-          pos[w] > pos[u2] && layer[w] < layer[u2] + 1 && (layer[w] = layer[u2] + 1);
+          peer(u2, w) ? layer[w] !== layer[u2] && (layer[u2] = layer[w] = Math.max(layer[u2], layer[w])) : pos[w] > pos[u2] && layer[w] < layer[u2] + 1 && (layer[w] = layer[u2] + 1);
         });
       });
       var maxL = 0;

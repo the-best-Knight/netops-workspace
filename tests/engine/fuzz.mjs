@@ -1,7 +1,7 @@
 import { loadNM, fx } from './load.mjs';
 import { readdirSync } from 'node:fs';
 const NM = loadNM();
-const files = readdirSync(new URL('../fixtures/', import.meta.url)).filter(f => !f.startsWith('.'));
+const files = readdirSync(new URL('../fixtures/', import.meta.url), { recursive: true }).filter(f => !f.startsWith('.') && /\.(txt|cfg|set)$/.test(f));
 const texts = files.map(f => [f, fx(f)]);
 let seed = 12345; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296; const pick = (a) => a[Math.floor(rnd() * a.length)];
 function mutate(t) {

@@ -534,5 +534,19 @@ test('a cut-off table does not mark the interfaces after the cut as gone', () =>
   ok(!run(hdr + row(1) + row(2) + 'Gi1/0/3 p3 conn').gone.status, 'a cut-off table must not');
 });
 
+console.log('Five-switch fictional network and end-device kinds');
+test('the five-switch CLI text gives six confirmed switch links and six inferred end-device links, nothing else', () => {
+  const NM = fresh(), m = NM.newModel(); imp(NM, m, ['core-01', 'dist-01', 'dist-02', 'access-01', 'access-02'].map((n) => 'five-switch/' + n + '.txt'), T0);
+  const v = NM.view(m, { now: T0 + 1000 }), nm = (id) => m.devices[id].name, key = (L) => [nm(L.a.dev) + ':' + L.a.ifk, nm(L.b.dev) + ':' + L.b.ifk].sort().join(' <-> ');
+  eq(v.links.filter((L) => L.status === 'confirmed').map(key).sort(), ['ACCESS-01:te1/1/1 <-> CORE-01:te1/1/1', 'ACCESS-01:te1/1/2 <-> DIST-02:te1/1/1', 'ACCESS-02:te1/1/1 <-> DIST-01:te1/1/1', 'CORE-01:gi1/0/1 <-> DIST-01:gi1/0/1', 'CORE-01:gi1/0/2 <-> DIST-02:gi1/0/1', 'DIST-01:gi1/0/2 <-> DIST-02:gi1/0/2']);
+  eq(v.links.filter((L) => L.status === 'inferred').map(key).sort(), ['ACCESS-01:gi1/0/12 <-> WS-ENG-014:eth0', 'ACCESS-01:gi1/0/5 <-> AP-LOBBY:eth0', 'ACCESS-02:gi1/0/8 <-> ENG-WS-027:eth0', 'CORE-01:gi1/0/24 <-> Server-01:eth0', 'DIST-01:gi1/0/10 <-> Printer-3F:eth0', 'DIST-02:gi1/0/15 <-> IP-Phone-Conf:eth0']);
+  eq(v.links.length, 12);
+});
+test('an LLDP station is an end device and a WLAN access point and a telephone have their own kinds, never a switch', () => {
+  const NM = fresh(), m = NM.newModel(); imp(NM, m, ['core-01', 'dist-01', 'dist-02', 'access-01', 'access-02'].map((n) => 'five-switch/' + n + '.txt'), T0);
+  const k = (n) => byName(m, n).kind; eq([k('Server-01'), k('Printer-3F'), k('WS-ENG-014'), k('ENG-WS-027')], ['endpoint', 'endpoint', 'endpoint', 'endpoint']); eq(k('AP-LOBBY'), 'ap'); eq(k('IP-Phone-Conf'), 'phone');
+  eq(NM.guessKind('S', '', 'edge-sw1'), 'switch', 'the CDP/IOS letter S still means switch');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed' + (fail ? ': ' + failures.join('; ') : ''));
 process.exit(fail ? 1 : 0);
