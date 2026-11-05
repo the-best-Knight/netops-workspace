@@ -181,7 +181,7 @@ test('13f unrecognised output says what it looks like instead of guessing', () =
 });
 
 test('5d NX-OS style CDP table headers are read', () => {
-  const NM = fresh(); const t = 'N9K-1# show cdp neighbors\nCapability Codes: R - Router, T - Trans-Bridge, B - Source-Route-Bridge\n                  S - Switch, H - Host, I - IGMP, r - Repeater,\n                  V - VoIP-Phone, D - Remotely-Managed-Device,\n                  s - Supports-STP-Dispute\n\nDevice-ID          Local Intrfce  Hldtme Capability  Platform      Port ID\nSPINE1(FDO123)     Eth1/1         146    R S s       N9K-C9336C    Ethernet1/5\n';
+  const NM = fresh(); const t = 'N9K-1# show cdp neighbors\nCapability Codes: R - Router, T - Trans-Bridge, B - Source-Route-Bridge\n                  S - Switch, H - Host, I - IGMP, r - Repeater,\n                  V - VoIP-Phone, D - Remotely-Managed-Device,\n                  s - Supports-STP-Dispute\n\nDevice-ID          Local Intrfce  Hldtme Capability  Platform      Port ID\nSPINE1(FDO123)     Eth1/1         146    R S s       N9K-C9336C    Ethernet1/5\n\nTotal entries displayed: 1\n'; // NX-OS ends the table with this line
   const secs = NM.parseInputs([{ name: 'n', text: t }]); eq(secs[0].parser, 'cisco.cdp'); eq(secs[0].facts.counts.nbrs, 1); eq(secs[0].facts.ifaces[0].nbrs[0].rport, 'Ethernet1/5');
 });
 
@@ -548,5 +548,61 @@ test('an LLDP station is an end device and a WLAN access point and a telephone h
   eq(NM.guessKind('S', '', 'edge-sw1'), 'switch', 'the CDP/IOS letter S still means switch');
 });
 
+console.log('F-02 neighbour rows cut inside their last column (audit 2026-11-05)');
+const LLDP_HEAD = 'Capability codes:\n    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\nDevice ID           Local Intf     Hold-time  Capability      Port ID\n';
+const lrow = (dev, loc, port) => dev.padEnd(20) + loc.padEnd(15) + '120        B,R             ' + port;
+const ciscoLldp = (host, rows, footer) => host + '#show lldp neighbors\n' + LLDP_HEAD + rows.map((r) => lrow(...r)).join('\n') + (footer ? '\n\nTotal entries displayed: ' + rows.length + '\n' : '');
+const one = (NM, text, at) => { const m = NM.newModel(); const secs = NM.parseInputs([{ name: 'paste.txt', text }]); NM.apply(m, secs, { at: at || T0 }); return { m, secs, v: NM.view(m, {}) }; };
+const ports = (r) => r.v.links.map((L) => r.m.devices[L.a.dev].name + ' ' + L.a.ifk + ' - ' + r.m.devices[L.b.dev].name + ' ' + L.b.ifk);
+test('F-02a Cisco LLDP: the cut last row keeps its neighbour, drops the cut port, warns with the row, and marks the table partial', () => {
+  const NM = fresh(), r = one(NM, ciscoLldp('SW-A', [['SW-B', 'Gi1/0/1', 'Gi1/0/5'], ['SW-C', 'Gi1/0/2', 'Gi1/0']], false));
+  ok(!ports(r).some((p) => /gi1\/0$/.test(p)), 'a link to the non-existent port gi1/0: ' + ports(r)); ok(ports(r).includes('SW-A gi1/0/1 - SW-B gi1/0/5'), 'the complete row is kept: ' + ports(r));
+  ok(r.v.links.some((L) => [r.m.devices[L.a.dev].name, r.m.devices[L.b.dev].name].includes('SW-C')), 'the neighbour SW-C is kept'); ok(!r.v.links.some((L) => L.status === 'confirmed'), 'nothing confirmed from one side');
+  const w = r.secs[0].warnings.join(' | '); ok(/may be cut off: SW-C\s+Gi1\/0\/2/.test(w) && /"Gi1\/0" is not used/.test(w), w); ok(r.secs[0].partial, 'partial');
+});
+test('F-02b Cisco LLDP: a complete table with its footer keeps every port and warns about nothing', () => {
+  const NM = fresh(), r = one(NM, ciscoLldp('SW-A', [['SW-B', 'Gi1/0/1', 'Gi1/0/5'], ['SW-C', 'Gi1/0/2', 'Gi1/0/1']], true));
+  ok(ports(r).includes('SW-A gi1/0/2 - SW-C gi1/0/1'), ports(r)); eq(r.secs[0].warnings, []); ok(!r.secs[0].partial, 'not partial');
+});
+test('F-02c legitimate short names are kept as they are: Gi0/1, Fa0/24, Te1/1/1, Eth1/5, mgmt0', () => {
+  const NM = fresh(), r = one(NM, ciscoLldp('SW-A', [['R1', 'Gi1/0/1', 'Gi0/1'], ['SW-OLD', 'Gi1/0/2', 'Fa0/24'], ['CORE', 'Te1/1/1', 'Te1/1/1'], ['N9K', 'Gi1/0/3', 'Eth1/5'], ['OOB', 'Gi1/0/4', 'mgmt0']], true));
+  for (const p of ['gi0/1', 'fa0/24', 'te1/1/1', 'eth1/5', 'mgmt0']) ok(ports(r).some((x) => x.endsWith(' ' + p)), p + ' missing: ' + ports(r));
+});
+test('F-02d a footer with a different count warns, and a cut middle row is still reported as not understood', () => {
+  const NM = fresh(); const t = ciscoLldp('SW-A', [['SW-B', 'Gi1/0/1', 'Gi1/0/5'], ['SW-C', 'Gi1/0/2', 'Gi1/0/1']], true).replace('Total entries displayed: 2', 'Total entries displayed: 3').replace(lrow('SW-B', 'Gi1/0/1', 'Gi1/0/5'), lrow('SW-B', 'Gi1/0/1', 'Gi1/0/5') + '\nSW-D                Gi1/');
+  const r = one(NM, t), w = r.secs[0].warnings.join(' | '); ok(/says 3 entries but 2 were read/.test(w) && /not understood: SW-D/.test(w), w); ok(ports(r).includes('SW-A gi1/0/2 - SW-C gi1/0/1'), 'complete rows kept');
+});
+test('F-02e a wrapped long device name with the footer still reads, and its port is kept', () => {
+  const NM = fresh(); const t = 'SW-A#show lldp neighbors\n' + LLDP_HEAD + 'very-long-neighbour-name.corp.example.com\n                    Gi1/0/9        120        B               Gi1/0/48\n\nTotal entries displayed: 1\n';
+  const r = one(NM, t); ok(ports(r).some((p) => /gi1\/0\/9 - .* gi1\/0\/48|gi1\/0\/48 - .*gi1\/0\/9/.test(p)), ports(r)); eq(r.secs[0].warnings, []);
+});
+test('F-02f a later cut table does not mark the rows it lost as gone', () => {
+  const NM = fresh(), m = NM.newModel(); const full = ciscoLldp('SW-A', [['SW-B', 'Gi1/0/1', 'Gi1/0/5'], ['SW-C', 'Gi1/0/2', 'Gi1/0/1'], ['SW-D', 'Gi1/0/3', 'Gi1/0/1']], true);
+  NM.apply(m, NM.parseInputs([{ name: 'a', text: full }]), { at: T0 }); NM.apply(m, NM.parseInputs([{ name: 'b', text: ciscoLldp('SW-A', [['SW-B', 'Gi1/0/1', 'Gi1/0/5'], ['SW-C', 'Gi1/0/2', 'Gi1/0']], false) }]), { at: T0 + H });
+  const d = byName(m, 'SW-A').ifaces['gi1/0/3'].nbrs.find((n) => n.name === 'SW-D'); ok(d && !d.gone, 'SW-D was marked gone by a cut paste');
+});
+test('F-02g the far side still confirms the cable with the right ports, never the cut one', () => {
+  const NM = fresh(); const r = one(NM, ciscoLldp('SW-A', [['SW-B', 'Gi1/0/1', 'Gi1/0/5'], ['SW-C', 'Gi1/0/2', 'Gi1/0']], false) + '\n' + ciscoLldp('SW-C', [['SW-A', 'Gi1/0/1', 'Gi1/0/2']], true));
+  ok(!ports(r).some((p) => /gi1\/0$/.test(p)), ports(r)); ok(ports(r).some((p) => /SW-A gi1\/0\/2 - SW-C gi1\/0\/1|SW-C gi1\/0\/1 - SW-A gi1\/0\/2/.test(p)), ports(r));
+});
+const cdp = (rows, footer) => 'SW-A#show cdp neighbors\nCapability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\n                  S - Switch, H - Host, I - IGMP, r - Repeater, P - Phone\n\nDevice ID        Local Intrfce     Holdtme    Capability  Platform  Port ID\n' + rows.map((x) => x[0].padEnd(17) + x[1].padEnd(18) + '150             R S I  WS-C3850  ' + x[2]).join('\n') + (footer ? '\n\nTotal cdp entries displayed : ' + rows.length + '\n' : '');
+test('F-02h Cisco CDP: a cut last row keeps the neighbour without the cut port; with the IOS footer every port is kept', () => {
+  const NM = fresh(); let r = one(NM, cdp([['SW-B', 'Gig 1/0/1', 'Gig 1/0/5'], ['SW-C', 'Gig 1/0/2', 'Gig 1/0']], false));
+  ok(!ports(r).some((p) => /gi1\/0$/.test(p)), ports(r)); ok(/may be cut off/.test(r.secs[0].warnings.join(' ')), r.secs[0].warnings);
+  r = one(fresh(), cdp([['SW-B', 'Gig 1/0/1', 'Gig 1/0/5'], ['SW-C', 'Gig 1/0/2', 'Gig 1/0/1']], true)); ok(ports(r).some((p) => /gi1\/0\/1$/.test(p) && /SW-C/.test(p)), ports(r)); eq(r.secs[0].warnings, []);
+});
+const dell = (rows) => 'OS10# show lldp neighbors\nLoc PortID          Rem Host Name          Rem Port Id                    Rem Chassis Id\n---------------------------------------------------------------------------------------\n' + rows.map((x) => x.join('    ')).join('\n') + '\n';
+test('F-02i Dell OS10: a cut chassis ID is not used and does not end up in the port name', () => {
+  const NM = fresh(), r = one(NM, dell([['ethernet1/1/1', 'SW-B', 'ethernet1/1/5', '90:b1:1c:f4:a9:01'], ['ethernet1/1/2', 'SW-C', 'ethernet1/1/7', '90:b1:1c:f4:a9']]));
+  ok(ports(r).some((p) => /eth1\/1\/2 - SW-C eth1\/1\/7|SW-C eth1\/1\/7 - .*eth1\/1\/2/.test(p)), ports(r)); ok(!ports(r).some((p) => /90:b1/.test(p)), 'MAC fragment in a port'); ok(/chassis ID looks cut off/.test(r.secs[0].warnings.join(' ')), r.secs[0].warnings);
+});
+test('F-02j Dell: a last row with no chassis ID while the others have one drops only that port; a full table is untouched', () => {
+  const NM = fresh(); let r = one(NM, dell([['ethernet1/1/1', 'SW-B', 'ethernet1/1/5', '90:b1:1c:f4:a9:01'], ['ethernet1/1/2', 'SW-C', 'ethernet1/1']]));
+  ok(!ports(r).some((p) => /eth1\/1$/.test(p)), ports(r)); ok(/no chassis ID while the others do/.test(r.secs[0].warnings.join(' ')), r.secs[0].warnings); ok(ports(r).some((p) => /eth1\/1\/5/.test(p)), 'first row kept');
+  r = one(fresh(), dell([['ethernet1/1/1', 'SW-B', 'ethernet1/1/5', '90:b1:1c:f4:a9:01'], ['ethernet1/1/2', 'SW-C', 'ethernet1/1/7', '90:b1:1c:f4:a9:02']])); eq(r.secs[0].warnings, []); eq(r.v.links.length, 2);
+});
+test('F-02k Dell OS9 two-word ports with full MACs are unaffected', () => {
+  const NM = fresh(), r = one(NM, fx('os9-lldp.txt')); ok(!r.secs[0].warnings.some((w) => /cut off|chassis/.test(w)), r.secs[0].warnings); ok(r.v.links.length >= 1, 'links read');
+});
 console.log('\n' + pass + ' passed, ' + fail + ' failed' + (fail ? ': ' + failures.join('; ') : ''));
 process.exit(fail ? 1 : 0);

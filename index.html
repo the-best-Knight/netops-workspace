@@ -18215,6 +18215,21 @@ dialog.nm-dlg {
       }), P.finish(f);
     } });
     var CAP_CDP = { R: "router", T: "transparent bridge", B: "bridge", S: "switch", H: "host", I: "igmp", r: "repeater", P: "phone", D: "remote", C: "cvta", M: "mac relay" }, CAP_LLDP = { R: "router", B: "bridge", T: "phone", C: "docsis", W: "wlan ap", P: "repeater", S: "station", O: "other" };
+    // Cisco ends these tables with a "Total ... entries displayed" line. Without it the paste may stop inside the last
+    // row, where a cut port ("Gi1/0" for "Gi1/0/1") still reads like a port: keep the neighbour, drop that port, say so.
+    function nbrTableEnd(f, total, got, last, lastAtEnd, row, footer) {
+      if (total >= 0) {
+        total !== got && f.warnings.push("The table says " + total + " entr" + (total === 1 ? "y" : "ies") + " but " + got + " " + (got === 1 ? "was" : "were") + " read. Check that the whole table was pasted.");
+        return;
+      }
+      if (got) {
+        if (f.partial = true, last && lastAtEnd && last.rport) {
+          f.warnings.push('The table ends without its "' + footer + '" line, so the last row may be cut off: ' + row.slice(0, 70) + '. Its remote port "' + last.rport + '" is not used; the neighbour is kept with an unknown port.'), last.rportCut = last.rport, last.rport = "";
+          return;
+        }
+        f.warnings.push('The table ends without its "' + footer + '" line, so it may be incomplete. Nothing missing from it is treated as gone.');
+      }
+    }
     NM2.register({ id: "cisco.cdp", vendor: "cisco", cat: "nbr", label: "Cisco show cdp neighbors", starts: [/^\s*Capability Codes:\s*R - Router/i, /^\s*Device[- ]ID\s+Local Intrfce/i], score: function(t, cmd) {
       return /Device[- ]ID\s+Local Intrfce\s+(?:Holdtme|Hldtme)/i.test(t) && !/^-{5,}\s*$/m.test(t.slice(0, 0)) && !/^Device ID:/mi.test(t) ? cmdIs(cmd, /^show cdp neighbors?( \S+)?$/) ? 0.97 : 0.92 : 0;
     }, parse: function(t) {
@@ -18224,10 +18239,10 @@ dialog.nm-dlg {
         break;
       }
       if (start < 0) return P.finish(f);
-      var pend = "";
+      var pend = "", total = -1, got = 0, last = null, lastAt = -1, lastRow = "", endAt = -1;
       for (i = start; i < rows.length; i++) {
-        var l = rows[i];
-        if (!(!tidy2(l) || /^Total cdp entries/i.test(tidy2(l)))) {
+        var l = rows[i], tm = /^Total (?:cdp )?entries displayed\s*:\s*(\d+)/i.exec(tidy2(l));
+        if (tm && (total = +tm[1]), tidy2(l) && !/^\S+[#>]$/.test(tidy2(l)) && !tm && (endAt = i), !(!tidy2(l) || /^Total (?:cdp )?entries/i.test(tidy2(l)))) {
           var tl = tidy2(l);
           if (/^\S+$/.test(tl) && !/^\d/.test(tl) && /^\S/.test(l) && i + 1 < rows.length && /^\s{10,}/.test(rows[i + 1])) {
             pend = tl;
@@ -18244,10 +18259,10 @@ dialog.nm-dlg {
           var iface = P.iface(f, m[2]);
           iface && iface.nbrs.push({ proto: "cdp", name: m[1], rport: rp, platform: plat, caps: m[4].split(/\s+/).map(function(c) {
             return CAP_CDP[c] || c;
-          }), hold: +m[3] });
+          }), hold: +m[3] }), got++, iface && (last = iface.nbrs[iface.nbrs.length - 1], lastAt = i, lastRow = tl);
         }
       }
-      return P.finish(f);
+      return nbrTableEnd(f, total, got, last, lastAt === endAt, lastRow, "Total cdp entries displayed"), P.finish(f);
     } }), NM2.register({ id: "cisco.cdpdetail", vendor: "cisco", cat: "nbr", label: "Cisco show cdp neighbors detail", starts: [/^-{10,}\s*\n\s*Device ID:/i, /^Device ID:\s*\S+/i], score: function(t, cmd) {
       return /^Device ID:\s*\S+/mi.test(t) && /Interface:\s*\S+,\s*Port ID \(outgoing port\):/i.test(t) ? cmdIs(cmd, /cdp neighbors? detail|cdp entry/) ? 0.98 : 0.95 : 0;
     }, parse: function(t) {
@@ -18277,10 +18292,10 @@ dialog.nm-dlg {
         break;
       }
       if (start < 0) return P.finish(f);
-      var pend = "";
+      var pend = "", total = -1, got = 0, last = null, lastAt = -1, lastRow = "", endAt = -1;
       for (i = start; i < rows.length; i++) {
-        var l = rows[i], tl = tidy2(l);
-        if (!(!tl || /^Total entries/i.test(tl))) {
+        var l = rows[i], tl = tidy2(l), tm = /^Total entries displayed\s*:\s*(\d+)/i.exec(tl);
+        if (tm && (total = +tm[1]), tl && !/^\S+[#>]$/.test(tl) && !tm && (endAt = i), !(!tl || /^Total entries/i.test(tl))) {
           if (/^\S+$/.test(tl) && /^\S/.test(l) && i + 1 < rows.length && /^\s{10,}/.test(rows[i + 1])) {
             pend = tl;
             continue;
@@ -18296,11 +18311,12 @@ dialog.nm-dlg {
             var caps = m[4] === "-" ? [] : m[4].split(",").filter(Boolean).map(function(c) {
               return CAP_LLDP[c] || c;
             });
-            iface.nbrs.push({ proto: "lldp", name: m[1], rport: tidy2(m[5]), caps, hold: +m[3], portIdOnly: true });
+            iface.nbrs.push({ proto: "lldp", name: m[1], rport: tidy2(m[5]), caps, hold: +m[3], portIdOnly: true }), last = iface.nbrs[iface.nbrs.length - 1], lastAt = i, lastRow = tl;
           }
+          got++;
         }
       }
-      return P.finish(f);
+      return nbrTableEnd(f, total, got, last, lastAt === endAt, lastRow, "Total entries displayed"), P.finish(f);
     } }), NM2.register({ id: "cisco.lldpdetail", vendor: "cisco", cat: "nbr", label: "Cisco show lldp neighbors detail", starts: [/^-{10,}\s*\n\s*Local Intf:/i, /^Local Intf:\s*\S+/i], score: function(t, cmd) {
       return /^Local Intf:\s*\S+/mi.test(t) && /Chassis id:/i.test(t) ? cmdIs(cmd, /lldp neighbors? detail|lldp entry/) ? 0.98 : 0.95 : 0;
     }, parse: function(t) {
@@ -18736,29 +18752,32 @@ dialog.nm-dlg {
     } }), NM2.register({ id: "dell.lldp", vendor: "dell", cat: "nbr", label: "Dell OS10 show lldp neighbors", starts: [/^\s*Loc PortID\s+Rem Host Name/i], score: function(t, cmd) {
       return /^\s*Loc PortID\s+Rem Host Name\s+Rem Port Id/mi.test(t) ? cmdIs(cmd, /^show lldp neighbors?/) ? 0.97 : 0.93 : 0;
     }, parse: function(t) {
-      var f = P.facts("dell.lldp", "nbr", "Dell OS10 show lldp neighbors"), started = false, os9Rows = 0, os10Rows = 0;
+      var f = P.facts("dell.lldp", "nbr", "Dell OS10 show lldp neighbors"), started = false, os9Rows = 0, os10Rows = 0, macRows = 0, last = null, lastRow = "", endRow = "";
       return P.lines(t).forEach(function(l) {
         if (/^\s*Loc PortID\s+Rem Host Name/i.test(l)) {
           started = true;
           return;
         }
-        if (!(!started || !tidy2(l) || /^-{5,}/.test(tidy2(l)))) {
-          var toks = tidy2(l).split(/\s+/);
+        if (started && tidy2(l) && !/^\S+[#>]$/.test(tidy2(l)) && (endRow = tidy2(l)), !(!started || !tidy2(l) || /^-{5,}/.test(tidy2(l)))) {
+          var toks = tidy2(l).split(/\s+/), cutMac = "";
           // Dell OS9 writes a port as two words ("Te 0/1"); read as one name so "0/1" is not taken for a neighbour.
           // OS9 and OS10 share this table header. Only the port names tell them apart: "Te 0/1" is OS9, "ethernet1/1/1" is OS10.
           toks.length >= 2 && /^[A-Za-z]{2,3}$/.test(toks[0]) && /^\d+(?:\/\d+)+$/.test(toks[1]) && (toks.splice(0, 2, toks[0] + toks[1]), os9Rows++);
           /^(?:ethernet|mgmt)\d+\/\d+\/\d+/i.test(toks[0]) && os10Rows++;
           toks.length < 3 && /^[A-Za-z]/.test(toks[0]) && f.warnings.push("Row not understood: " + tidy2(l).slice(0, 60));
+          // the last column is the chassis MAC; a paste cut inside it leaves part of one ("90:b1:1c:f4:a9"), never a port
+          toks.length >= 4 && !U.isMac(toks[toks.length - 1]) && /^[0-9a-f]{2}(?:[:-][0-9a-f]{0,2}){1,4}[:-]?$|^[0-9a-f]{4}\.[0-9a-f]{0,4}\.?[0-9a-f]{0,3}$/i.test(toks[toks.length - 1]) && (cutMac = toks.pop());
           if (!(toks.length < 3)) {
             var chassis = toks[toks.length - 1], local = toks[0], rest = toks.slice(1, -1), host = "", port = "";
             U.isMac(chassis) || (chassis = "", rest = toks.slice(1)), rest.length >= 2 ? (host = rest[0], port = rest.slice(1).join(" ")) : rest.length === 1 && (port = rest[0]), /^\(null\)$|^-$/i.test(host) && (host = "");
             // No host name, just a two-word port ("Te 1/2"): the first word is part of the port, not a host.
             rest.length === 2 && /^[A-Za-z][A-Za-z-]*$/.test(rest[0]) && /^\d+(?:\/\d+)+$/.test(rest[1]) && (host = "", port = rest.join(" "));
             var i = P.iface(f, local);
-            i && i.nbrs.push({ proto: "lldp", name: host || chassis, chassis, rport: port, noName: !host, caps: [], portIdOnly: true });
+            chassis && macRows++, cutMac && (f.warnings.push('The chassis ID looks cut off and was not used: "' + cutMac + '" in ' + tidy2(l).slice(0, 70) + "."), f.partial = true);
+            i && (i.nbrs.push({ proto: "lldp", name: host || chassis, chassis, rport: port, noName: !host, caps: [], portIdOnly: true }), last = i.nbrs[i.nbrs.length - 1], last.chassisCut = !!cutMac, lastRow = tidy2(l));
           }
         }
-      }), f.device.vendor = "Dell", f.label = os9Rows && !os10Rows ? "Dell OS9 show lldp neighbors" : os10Rows && !os9Rows ? "Dell OS10 show lldp neighbors" : "Dell show lldp neighbors (OS9 or OS10 not identified)", P.finish(f);
+      }), last && lastRow === endRow && !last.chassis && !last.chassisCut && macRows && last.rport && (f.warnings.push('The last row has no chassis ID while the others do, so it may be cut off: ' + lastRow.slice(0, 70) + '. Its remote port "' + last.rport + '" is not used; the neighbour is kept with an unknown port.'), last.rportCut = last.rport, last.rport = "", f.partial = true), f.device.vendor = "Dell", f.label = os9Rows && !os10Rows ? "Dell OS9 show lldp neighbors" : os10Rows && !os9Rows ? "Dell OS10 show lldp neighbors" : "Dell show lldp neighbors (OS9 or OS10 not identified)", P.finish(f);
     } }), NM2.register({ id: "dell.pc", vendor: "dell", cat: "pc", label: "Dell OS10 show port-channel summary", starts: [/^\s*Group\s+Port-Channel\s+Type\s+Protocol\s+Member Ports/i], score: function(t, cmd) {
       return /^\s*Group\s+Port-Channel\s+Type\s+Protocol\s+Member Ports/mi.test(t) ? cmdIs(cmd, /port-channel summary/) ? 0.97 : 0.93 : 0;
     }, parse: function(t) {
