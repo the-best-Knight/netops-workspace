@@ -54,4 +54,12 @@ await fr(`const x = w.__nmx; const n = x.nodes().find(n => n.name === 'DIST-02')
 await arrange(); const pinned = await metrics();
 ok('a pinned device keeps its place and nothing overlaps it', JSON.stringify(pinned.pos['DIST-02']) === '[1000,40]' && pinned.overlaps === 0, pinned.pos);
 ok('arranging does not change the links or the view settings', await J(`const x = w.__nmx; return x.links().length >= 12 && x.ui.overlay === false && x.ui.view === 'physical';`), 0);
+// end-device icons come from the LLDP capability, and a type picked by hand wins
+const icons = await J(`const x = w.__nmx; const icon = (name) => { const n = x.nodes().find(n => n.name === name); const g = d.querySelector('#svg g[data-kind=device][data-id="' + n.id + '"]'); return g.querySelector('g path').getAttribute('d'); };
+  return { ap: icon('AP-LOBBY'), phone: icon('IP-Phone-Conf'), ws: icon('WS-ENG-014'), printer: icon('Printer-3F'), sw: icon('ACCESS-01'), dist: icon('DIST-01') };`);
+ok('the access point, the IP phone and the end stations each get a different icon, and none uses a switch icon', new Set([icons.ap, icons.phone, icons.ws]).size === 3 && icons.ws === icons.printer && ![icons.ap, icons.phone, icons.ws].includes(icons.sw), icons);
+const handPicked = await J(`const x = w.__nmx; const n = x.nodes().find(n => n.name === 'AP-LOBBY'); n.type = 'server'; x.render(); await new Promise(r => setTimeout(r, 200)); const g = d.querySelector('#svg g[data-kind=device][data-id="' + n.id + '"]'); const out = g.querySelector('g path').getAttribute('d'); n.type = 'custom'; x.render(); return out;`);
+ok('a device type chosen by hand replaces the capability icon', handPicked !== icons.ap && /^M4 4h16v7H4z/.test(handPicked), handPicked);
+const legend = await J(`const b = [...d.querySelectorAll('button')].find(b => /^Legend/.test(b.textContent.trim())); b.click(); await new Promise(r => setTimeout(r, 300)); const t = d.body.textContent; b.click(); return { ap: /Access point/.test(t), phone: /IP phone/.test(t), st: /End station: PC, printer or server, not told apart/.test(t) };`);
+ok('the legend explains the three end-device icons and says end stations are not told apart', legend.ap && legend.phone && legend.st, legend);
 T.finish();

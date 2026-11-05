@@ -16452,6 +16452,9 @@ __KIT_BASE__ :root{--bg: var(--kit-page);--panel: var(--kit-s2);--panel2: var(--
 .nm-il li span {
   overflow-wrap: anywhere;
 }
+.nm-il li .nm-src {
+  display: block;
+}
 .nm-il li.sev-high span {
   color: var(--text);
 }
@@ -22274,7 +22277,7 @@ dialog.nm-dlg {
     function endName(name, t) {
       if (name) {
         var q = geo.P(t), u = geo.T(t);
-        labels.push({ id: l.id, text: name, x: q.x - u.y * 10, y: q.y + u.x * 10, base: 10, fill: th.sub, rank: 1 });
+        labels.push({ id: l.id, text: name, x: q.x - u.y * 10, y: q.y + u.x * 10, base: 10, fill: th.sub, rank: 1, geo, t });
       }
     }
     if ((!l.nm || nmxShowIf(l, isSel ? l.id : 0, live)) && (endName(l.ifA, t0), endName(l.ifB, 1 - t0)), nst && nmxDrawBadge(grp, geo, th, nst, l), nst && nmxDrawBundleCount(grp, geo, th, nst), down) {
@@ -22282,7 +22285,7 @@ dialog.nm-dlg {
       el("circle", { cx: dq.x, cy: dq.y, r: 8, fill: th.bg, stroke: th.bad, "stroke-width": 1.5, "pointer-events": "none" }, grp), el("path", { d: "M" + (dq.x - 3) + " " + (dq.y - 3) + "l6 6m0-6l-6 6", stroke: th.bad, "stroke-width": 1.6, "stroke-linecap": "round", fill: "none", "pointer-events": "none" }, grp);
     }
   }
-  function placeLabels(specs, boxes) {
+  function placeLabels(specs, boxes, geoMap) {
     var placed = [], dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.87, 0.5], [-0.87, 0.5], [0.87, -0.5], [-0.87, -0.5], [0.5, 0.87], [-0.5, 0.87], [0.5, -0.87], [-0.5, -0.87]];
     function overlaps(r, o) {
       return r.x < o.x + o.w + 2 && o.x < r.x + r.w + 2 && r.y < o.y + o.h + 2 && o.y < r.y + r.h + 2;
@@ -22293,15 +22296,67 @@ dialog.nm-dlg {
       for (i = 0; i < placed.length; i++) overlaps(r, placed[i]) && n++;
       return n;
     }
+    // interface names stay on their own link: try spots along it, beside it on either side or on it, and pick the one
+    // that covers no device or label and the fewest other links
+    var segs = [];
+    Object.keys(geoMap || {}).forEach(function(id) {
+      for (var g = geoMap[id], n = clamp(Math.ceil((g.len || 0) / 8), 8, 120), pts = [], i = 0; i <= n; i++) pts.push(g.P(i / n));
+      segs.push({ id: +id, pts, x0: Math.min.apply(null, pts.map(function(p) {
+        return p.x;
+      })), x1: Math.max.apply(null, pts.map(function(p) {
+        return p.x;
+      })), y0: Math.min.apply(null, pts.map(function(p) {
+        return p.y;
+      })), y1: Math.max.apply(null, pts.map(function(p) {
+        return p.y;
+      })) });
+    });
+    function crosses(r, own) {
+      for (var n = 0, i = 0; i < segs.length; i++) {
+        var s = segs[i];
+        if (s.id === own || s.x1 < r.x || s.x0 > r.x + r.w || s.y1 < r.y || s.y0 > r.y + r.h) continue;
+        for (var j = 0; j < s.pts.length; j++) if (s.pts[j].x > r.x - 1 && s.pts[j].x < r.x + r.w + 1 && s.pts[j].y > r.y - 1 && s.pts[j].y < r.y + r.h + 1) {
+          n++;
+          break;
+        }
+      }
+      return n;
+    }
+    // a label beside its link must be nearer that link than any other, or it reads as the wrong cable's port
+    function nearOther(c, own, d) {
+      for (var i = 0; i < segs.length; i++) {
+        var s = segs[i];
+        if (s.id === own || s.x1 < c.x - d || s.x0 > c.x + d || s.y1 < c.y - d || s.y0 > c.y + d) continue;
+        for (var j = 0; j < s.pts.length; j++) if (Math.hypot(s.pts[j].x - c.x, s.pts[j].y - c.y) < d) return true;
+      }
+      return false;
+    }
+    function alongLink(sp) {
+      var g = sp.geo, a = sp.t < 0.5, best = null, bestS = 1e9;
+      for (var lvl = 0; lvl < 2 && bestS >= 30; lvl++) for (var step = 0; step < 9; step++) {
+        var t = a ? sp.t + step * 0.06 : sp.t - step * 0.06;
+        if (a ? t > 0.5 : t < 0.5) break;
+        for (var q = g.P(t), u = g.T(t), nx = -u.y, ny = u.x, side = lvl ? [1, -1] : [1, -1, 0], k = 0; k < side.length; k++) {
+          var off = side[k] * (Math.abs(nx) * sp.w / 2 + Math.abs(ny) * sp.h / 2 + 3 + lvl * (Math.abs(nx) * sp.w + Math.abs(ny) * sp.h + 2)), r = { x: q.x + nx * off - sp.w / 2, y: q.y + ny * off - sp.h / 2, w: sp.w, h: sp.h }, s = count(r) * 100 + crosses(r, sp.id) * 6 + (nearOther({ x: r.x + sp.w / 2, y: r.y + sp.h / 2 }, sp.id, side[k] ? Math.abs(off) + 6 : sp.h / 2 + 3) ? 30 : 0) + step + (side[k] ? 0 : 2) + lvl * 4;
+          s < bestS && (bestS = s, best = r, best.at = q, best.lead = !!lvl);
+        }
+      }
+      return best && bestS < 30 ? best : null;
+    }
     specs.forEach(function(sp) {
+      var on = sp.geo && alongLink(sp);
+      if (on) {
+        sp.rect = on, placed.push(on);
+        return;
+      }
       for (var best = null, bestN = 1e9, done = false, ring = 0; ring <= 8 && !done; ring++) for (var cand = ring ? dirs : [[0, 0]], k = 0; k < cand.length && !done; k++) {
         var r = { x: sp.x + cand[k][0] * ring * 12 - sp.w / 2, y: sp.y + cand[k][1] * ring * 12 - sp.h / 2, w: sp.w, h: sp.h }, n = count(r);
         n < bestN && (bestN = n, best = r), n || (done = true);
       }
-      sp.rect = best, placed.push(best);
+      sp.geo && best && (best.at = sp.geo.P(sp.t), best.lead = true), sp.rect = best, placed.push(best);
     });
   }
-  function drawLabels(g, specs, th, live, selId, keepClear) {
+  function drawLabels(g, specs, th, live, selId, keepClear, geoMap) {
     if (specs.length) {
       var layer = el("g", { "pointer-events": "none" }, g), scale = live ? clamp(0.85 / view.k, 1, 1.7) : 1;
       specs.forEach(function(sp) {
@@ -22314,13 +22369,13 @@ dialog.nm-dlg {
         return n.kind === "zone";
       }).map(function(z) {
         return { x: z.x, y: z.y, w: z.w, h: ZONE_HEAD };
-      })).concat(keepClear || [])) : specs.forEach(function(sp) {
+      })).concat(keepClear || []), geoMap) : specs.forEach(function(sp) {
         sp.rect = { x: sp.x - sp.w / 2, y: sp.y - sp.h / 2, w: sp.w, h: sp.h };
       });
       var by = {};
       specs.forEach(function(sp) {
         var grp = by[sp.id] || (by[sp.id] = el("g", { "data-labels": sp.id }, layer)), r = sp.rect, on = sp.id === selId;
-        el("rect", { x: r.x, y: r.y, width: r.w, height: r.h, rx: 5, fill: th.bg, "fill-opacity": 0.92, stroke: on ? th.accent : th.zoneLine, "stroke-opacity": on ? 1 : 0.55, "stroke-width": 0.75 }, grp), text(grp, r.x + r.w / 2, r.y + r.h / 2 + sp.fs * 0.35, sp.text, sp.fs, sp.fill, { mono: true, anchor: "middle" });
+        r.lead && r.at && el("line", { x1: clamp(r.at.x, r.x, r.x + r.w), y1: clamp(r.at.y, r.y, r.y + r.h), x2: r.at.x, y2: r.at.y, stroke: th.sub, "stroke-width": 0.75, "stroke-opacity": 0.8, "data-leader": 1 }, grp), el("rect", { x: r.x, y: r.y, width: r.w, height: r.h, rx: 5, fill: th.bg, "fill-opacity": 0.92, stroke: on ? th.accent : th.zoneLine, "stroke-opacity": on ? 1 : 0.55, "stroke-width": 0.75 }, grp), text(grp, r.x + r.w / 2, r.y + r.h / 2 + sp.fs * 0.35, sp.text, sp.fs, sp.fill, { mono: true, anchor: "middle" });
       });
     }
   }
@@ -22328,7 +22383,7 @@ dialog.nm-dlg {
     var t = TYPES[n.type] || TYPES.custom, col = CATS[t.cat][th.col], grp = el("g", { "data-kind": "device", "data-id": n.id }, g), k = n.scale || 1, lk = n.nm ? nmxDeviceLook(n, th) : null;
     el("rect", { x: n.x, y: n.y, width: DEV_W * k, height: DEV_H * k, rx: 12 * k, fill: lk && lk.fill || th.card, stroke: isSel && live ? th.accent : lk && lk.stroke || col, "stroke-width": isSel && live ? 2.5 : 1.75, "stroke-dasharray": lk && lk.stub ? "5 3" : "" }, grp);
     var ig = el("g", { transform: "translate(" + (n.x + 14 * k) + "," + (n.y + DEV_H * k / 2 - 12 * k) + ") scale(" + k + ")", fill: "none", stroke: lk && lk.icon || col, "stroke-width": 1.6, "stroke-linecap": "round", "stroke-linejoin": "round", "pointer-events": "none" }, grp);
-    el("path", { d: ICONS[n.type] || ICONS.custom }, ig), text(grp, n.x + 48 * k, n.y + (n.ip ? 25 : 33) * k, trunc(n.name, Math.round(15 * k)), 13 * k, lk && lk.text || th.text, { weight: 650, pe: true }), n.ip && text(grp, n.x + 48 * k, n.y + 42 * k, trunc(n.ip, Math.round(17 * k)), 10.5 * k, lk && lk.sub || th.sub, { mono: true, pe: true }), nmxDrawDeviceExtras(grp, n, th, k, live);
+    el("path", { d: nmxKindIcon(n) || ICONS[n.type] || ICONS.custom }, ig), text(grp, n.x + 48 * k, n.y + (n.ip ? 25 : 33) * k, trunc(n.name, Math.round(15 * k)), 13 * k, lk && lk.text || th.text, { weight: 650, pe: true }), n.ip && text(grp, n.x + 48 * k, n.y + 42 * k, trunc(n.ip, Math.round(17 * k)), 10.5 * k, lk && lk.sub || th.sub, { mono: true, pe: true }), nmxDrawDeviceExtras(grp, n, th, k, live);
   }
   function drawText(g, n, th, live, isSel) {
     var s = sizeOf(n), grp = el("g", { "data-kind": "text", "data-id": n.id }, g);
@@ -22366,7 +22421,7 @@ dialog.nm-dlg {
       n.kind === "text" && drawText(g, n, th, live, !!chosen[n.id]);
     });
     var dot = lid && geoMap[lid] && mode === "select" && live ? geoMap[lid].apex : null;
-    if (drawLabels(g, labels, th, live, lid, dot ? [{ x: dot.x - 10, y: dot.y - 10, w: 20, h: 20 }] : []), !!live) {
+    if (drawLabels(g, labels, th, live, lid, dot ? [{ x: dot.x - 10, y: dot.y - 10, w: 20, h: 20 }] : [], geoMap), !!live) {
       lid && geoMap[lid] && mode === "select" && el("circle", { cx: geoMap[lid].apex.x, cy: geoMap[lid].apex.y, r: 7, fill: th.accent, stroke: th.bg, "stroke-width": 2, "data-kind": "link", "data-id": lid, "data-handle": "bend" }, g);
       var ring = function(n, dashed) {
         var z = sizeOf(n);
@@ -23240,8 +23295,9 @@ dialog.nm-dlg {
       view = { tx: 40, ty: 40, k: 1 }, schedule();
       return;
     }
-    var pad = 60, k = clamp(Math.min((W - pad * 2) / b.w, (H2 - pad * 2) / b.h), 0.06, 1.5);
-    view = { k, tx: (W - b.w * k) / 2 - b.x * k, ty: (H2 - b.h * k) / 2 - b.y * k }, schedule();
+    // keep the diagram clear of the floating bar at the top of the canvas
+    var pad = 60, bar = $("nm-bar"), top = bar && !bar.classList.contains("hidden") ? Math.max(pad, bar.offsetTop + bar.offsetHeight + 20) : pad, k = clamp(Math.min((W - pad * 2) / b.w, (H2 - top - pad) / b.h), 0.06, 1.5);
+    view = { k, tx: (W - b.w * k) / 2 - b.x * k, ty: top + (H2 - top - pad - b.h * k) / 2 - b.y * k }, schedule();
   }
   $("z-in").onclick = function() {
     zoomAt(1.25, stage.clientWidth / 2, stage.clientHeight / 2);
@@ -26108,6 +26164,13 @@ dialog.nm-dlg {
   function nmxDevOf(n) {
     return n && n.nm ? nmModel.devices[n.nm] : null;
   }
+  // imported access points, IP phones and end stations get their own icon, decided by LLDP/CDP capabilities, never by
+  // the name; a type the user picked by hand wins
+  var NMX_KIND_ICON = { ap: "M5 15h14v5H5z M8 17.5h.01 M12 15v-2.5 M9 10a4.2 4.2 0 0 1 6 0 M6.5 7.5a7.8 7.8 0 0 1 11 0", phone: "M4 10h16v10H4z M4 10c0-3.3 3.6-5.5 8-5.5s8 2.2 8 5.5 M8 13.5h.01 M12 13.5h.01 M16 13.5h.01 M8 16.8h.01 M12 16.8h.01 M16 16.8h.01", endpoint: "M12 4a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 14v6 M8 20h8" };
+  function nmxKindIcon(n) {
+    var d = nmxDevOf(n);
+    return d && NMX_KIND_ICON[d.kind] && n.type === NMX_TYPE[d.kind] ? NMX_KIND_ICON[d.kind] : "";
+  }
   var NMX_ABBR = [[/^TwentyFiveGigE?/i, "Twe"], [/^HundredGigE?/i, "Hu"], [/^FortyGigabitEthernet/i, "Fo"], [/^TenGigabitEthernet/i, "Te"], [/^GigabitEthernet/i, "Gi"], [/^FastEthernet/i, "Fa"], [/^Port-?channel/i, "Po"], [/^Ethernet/i, "Eth"], [/^aggregate-ethernet/i, "ae"], [/^Management/i, "Mgmt"]];
   function nmxShort(n) {
     n = String(n || "");
@@ -26353,7 +26416,7 @@ dialog.nm-dlg {
       return !leaf[i];
     });
     if (!infra.length || infra.length === list.length) return nmxLayeredCore(list);
-    var base = nmxLayeredCore(infra), at = /* @__PURE__ */ Object.create(null), ys = [], STEP = DEV_H + 48, S = DEV_W + 24;
+    var base = nmxLayeredCore(infra), at = /* @__PURE__ */ Object.create(null), ys = [], STEP = DEV_H + 76, S = DEV_W + 24;
     base.forEach(function(o) {
       at[o.n.id] = o, ys.indexOf(o.y) < 0 && ys.push(o.y);
     }), ys.sort(function(a2, b2) {
@@ -27394,7 +27457,11 @@ dialog.nm-dlg {
       if (L.ev.slice().sort(function(a, b) {
         return a.lvl - b.lvl || b.at - a.at;
       }).slice(0, 14).forEach(function(e) {
-        eul.appendChild(H("li", null, H("span", { class: "nm-evt", text: e.t === "cdp" ? "CDP" : e.t === "lldp" ? "LLDP" : e.t === "manual" ? "By hand" : e.t === "mac" ? "MAC table" : e.t === "subnet" ? "Subnet" : "Description" }), H("span", { text: e.note + (e.at ? " (" + nmxAgo(e.at) + (e.gone ? ", gone from the table captured " + nmxAgo(e.gone) : "") + ")" : "") })));
+        // which import the entry came from: the command, and the file when one was named
+        var so = e.t === "manual" ? null : nmModel.sources.filter(function(x) {
+          return x.id === e.src;
+        })[0], from = e.t === "manual" ? "" : so ? (so.cmd || so.label || "an imported section") + (so.file ? " \xB7 " + so.file : "") : "unknown";
+        eul.appendChild(H("li", null, H("span", { class: "nm-evt", text: e.t === "cdp" ? "CDP" : e.t === "lldp" ? "LLDP" : e.t === "manual" ? "By hand" : e.t === "mac" ? "MAC table" : e.t === "subnet" ? "Subnet" : "Description" }), H("span", null, e.note + (e.at ? " (" + nmxAgo(e.at) + (e.gone ? ", gone from the table captured " + nmxAgo(e.gone) : "") + ")" : ""), from && H("span", { class: "nm-asof nm-src", text: "Source: " + from }))));
       }), ev.appendChild(eul), box.appendChild(ev), (L.status !== "confirmed" || man) && box.appendChild(H("p", { class: "nm-note", text: "Matching VLANs, subnets, names or descriptions never prove a cable. Only a neighbour report that names both ends, or your own decision, confirms one." })), hand) {
         var ent = nmModel.manual.added.filter(function(m) {
           return m.id === hand;
@@ -28279,6 +28346,16 @@ dialog.nm-dlg {
         var s2 = el("svg", { width: 30, height: 16, viewBox: "0 0 30 16", "aria-hidden": "true" });
         el("rect", { x: 2, y: 2, width: 26, height: 12, rx: 4, fill: "none", stroke: th.mut, "stroke-width": 1.5, "stroke-dasharray": "3 2" }, s2), lgRow(ul, s2, "Only known from a neighbour table");
       }
+      var kinds = /* @__PURE__ */ Object.create(null);
+      nodes.forEach(function(n) {
+        nmxKindIcon(n) && (kinds[nmxDevOf(n).kind] = 1);
+      });
+      Object.keys(kinds).length && (ul = lgSection(body, "End devices (from LLDP or CDP capabilities)"), [["ap", "Access point"], ["phone", "IP phone"], ["endpoint", "End station: PC, printer or server, not told apart"]].forEach(function(r) {
+        if (kinds[r[0]]) {
+          var s3 = el("svg", { width: 30, height: 16, viewBox: "-3 0 30 24", "aria-hidden": "true" });
+          el("path", { d: NMX_KIND_ICON[r[0]], fill: "none", stroke: th.sub, "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round" }, s3), lgRow(ul, s3, r[1]);
+        }
+      }));
       if (ul = lgSection(body, nmUi.view === "vlan" ? "VLAN view" : "Link state"), nmUi.view === "vlan") {
         var v = nmxView(), seen = /* @__PURE__ */ Object.create(null);
         v.links.forEach(function(L) {
