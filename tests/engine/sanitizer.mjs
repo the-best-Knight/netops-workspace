@@ -131,4 +131,18 @@ test('a placeholder that already appears in a large input is never handed out ag
   const rep = (v) => (r.s.map.get(v) || {}).replacement;
   for (const [v, lit] of [['alpha.corp.example.com', 'node-1.example.net'], ['10.9.9.9', '192.0.2.1'], ['carol', 'operator1'], ['pw11223', '[SECRET_1]']]) { ok(rep(v) && rep(v) !== lit, v + ' was given ' + rep(v) + ', which is already in the text'); }
   ok(!r.out.includes('alpha.corp') && !r.out.includes('10.9.9.9') && !r.out.includes('pw11223'), r.out.slice(-200)); eq(r.back, t); });
+console.log('F-04 values after a line continuation (audit 2026-11-05); all secrets are synthetic');
+const NL = { LF: '\n', CRLF: '\r\n' };
+for (const [eol, nl] of Object.entries(NL)) {
+  test('--password \\ then the value on the next line (' + eol + ')', () => { const r = noLeak('cmd --password \\' + nl + '  ContPw2026 --verbose' + nl + 'done', ['ContPw2026']); ok(r.out.includes('--verbose') && r.out.includes('done'), r.out); ok(r.out.includes('\\' + nl), 'the continuation itself stays: ' + JSON.stringify(r.out)); });
+  test('other secret flags after a continuation (' + eol + ')', () => noLeak(['tool --token \\', '  TokVal20261', 'tool --api-key \\', '  ApiVal20262', 'tool --client-secret \\', '  CliVal20263', 'snmpwalk --community \\', '  ComVal20264'].join(nl), ['TokVal20261', 'ApiVal20262', 'CliVal20263', 'ComVal20264']));
+  test('the flag itself on a continued line (' + eol + ')', () => noLeak(['mysql -u root \\', '  -pMyPw2026 app', 'sshpass -p \\', '  SshPw2026 ssh admin@host1', 'ldapsearch -x \\', '  -D "cn=svc" -w LdPw2026', 'curl -s \\', '  -u admin:CuPw2026 https://192.0.2.10/'].join(nl), ['MyPw2026', 'SshPw2026', 'LdPw2026', 'CuPw2026']));
+  test('PowerShell backtick and cmd caret continuations (' + eol + ')', () => noLeak(['psexec \\\\host1 -u admin -p `', '  PsExPw2026 cmd', 'sqlcmd -S db1 -U sa -P ^', '  SqlPw2026'].join(nl), ['PsExPw2026', 'SqlPw2026']));
+}
+test('false positives: a continuation with no secret flag changes nothing', () => {
+  for (const t of ['make install \\\n  --prefix=/usr/local', 'docker run --rm \\\n  -v /data:/data image:1.0', 'echo "done" \\\n  && ls', 'tool --password-file \\\n  /etc/app/pw.txt', 'Get-Process `\n  -Name explorer']) { const r = clean(t); eq(r.out, t, 'changed: ' + JSON.stringify(t)); }
+});
+test('a lone continuation at the end of the text is not a secret', () => { const t = 'cmd --password \\'; const r = clean(t); ok(!/\[SECRET_\d+\]$/.test(r.out) || !r.s.map.has('\\'), r.out); eq(r.back, t); });
+test('sanitizing a continued command twice gives the same text, and restore is exact', () => { const t = 'cmd --password \\\r\n  ContPw2026\r\n'; const s = T.createSession(), a = T.sanitizeText(t, opts(), s).text, b = T.sanitizeText(a, opts(), s).text; eq(a, b); eq(T.rehydrateText(a, s).text, t); });
+
 done();
