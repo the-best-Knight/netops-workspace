@@ -461,5 +461,35 @@ test('a damaged mask in a Windows session never produces a CIDR', () => {
   ok(ips.length > 0, 'addresses were still read'); ok(ips.every((x) => !/\/\d+$/.test(x)), 'a prefix was asserted from a damaged mask: ' + ips.join(', '));
 });
 
+console.log('Import audit regressions (docs/reviews/NETOPS_TOPOLOGY_IMPORT_AUDIT.md)');
+test('a paging marker does not drop the rest of a wrapped VLAN port list', () => {
+  const NM = fresh(), head = 'SW1#show vlan brief\nVLAN Name                             Status    Ports\n---- -------------------------------- --------- -------------------------------\n1    default                          active    Gi1/0/1, Gi1/0/2\n';
+  const tail = '                                                Gi1/0/3, Gi1/0/4\n10   USERS                            active    Gi1/0/5\n';
+  for (const mid of ['', '--More--\n', ' --More-- \x08\x08\x08\x08\x08\x08\x08\x08\x08']) {
+    const v = NM.parseInputs([{ name: 'v', text: head + mid + tail }])[0].facts.vlans;
+    eq(v.map((x) => x.id + ':' + x.ports.join('+')), ['1:Gi1/0/1+Gi1/0/2+Gi1/0/3+Gi1/0/4', '10:Gi1/0/5'], 'marker ' + JSON.stringify(mid));
+  }
+});
+test('Dell OS9 LLDP output with two-word ports makes no invented neighbour', () => {
+  const NM = fresh(), hdr = 'FTOS-1#show lldp neighbors\n Loc PortID   Rem Host Name     Rem Port Id         Rem Chassis Id\n ---------------------------------------------------------------------\n';
+  const f = NM.parseInputs([{ name: 'l', text: hdr + ' Te 0/1       S4810-2           TenGigabitEthernet 0/1  00:01:e8:aa:bb:cc\n Te 0/2       -                 Te 1/2                  00:01:e8:aa:bb:dd\n' }])[0].facts;
+  eq(f.ifaces.map((i) => i.key), ['te0/1', 'te0/2']); eq(f.ifaces.map((i) => i.nbrs[0].name), ['S4810-2', '00:01:e8:aa:bb:dd']);
+  eq(f.ifaces[0].nbrs[0].rport, 'TenGigabitEthernet 0/1'); eq(f.ifaces[1].nbrs[0].rport, 'Te 1/2'); ok(f.ifaces[1].nbrs[0].noName, 'no host name was invented');
+});
+test('a shut-down port that reported a neighbour is flagged, not silently drawn', () => {
+  const NM = fresh(), m = NM.newModel(), at = Date.parse('2026-10-12T10:00:00Z');
+  const cdp = 'SWA#show cdp neighbors detail\n-------------------------\nDevice ID: SWB\nEntry address(es): \n  IP address: 10.0.0.2\nPlatform: cisco WS-C3850,  Capabilities: Switch IGMP \nInterface: GigabitEthernet1/0/1,  Port ID (outgoing port): GigabitEthernet1/0/1\nHoldtime : 150 sec\n';
+  NM.apply(m, NM.parseInputs([{ name: 'a', text: 'hostname SWA\ninterface Gi1/0/1\n shutdown\n!\n' + cdp }, { name: 'b', text: 'hostname SWB\ninterface Vlan99\n ip address 10.0.0.2 255.255.255.0\n' }]), { at });
+  const v = NM.view(m, { now: at + 1000 }), r = v.review.filter((x) => x.cat === 'state-conflict');
+  eq(r.length, 1); ok(/SWA GigabitEthernet1\/0\/1: configuration says shutdown, but a neighbour was reported/.test(r[0].title), r[0].title);
+  eq(v.links.filter((L) => L.status === 'confirmed').length, 0, 'a one-sided report is never confirmed');
+});
+test('Junos output names Junos as the reason it was not read', () => {
+  const NM = fresh();
+  for (const t of ['user@mx1> show interfaces terse\nInterface               Admin Link Proto    Local                 Remote\nge-0/0/0                up    up\n', 'system {\n    host-name mx1;\n}\ninterfaces {\n    ge-0/0/1 {\n        unit 0;\n    }\n}\n', 'user@mx1> show lldp neighbors\nLocal Interface    Parent Interface    Chassis Id          Port info          System Name\nge-0/0/1           -                   00:11:22:33:44:55   ge-0/0/2           sw1\n']) {
+    eq(NM.parseInputs([{ name: 'j', text: t }])[0].status, 'unrecognised'); ok(/Junos/.test(NM.hintFor(t)), 'hint: ' + NM.hintFor(t));
+  }
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed' + (fail ? ': ' + failures.join('; ') : ''));
 process.exit(fail ? 1 : 0);

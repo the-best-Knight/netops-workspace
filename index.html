@@ -17624,7 +17624,7 @@ dialog.nm-dlg {
     NM2.clean = function(text2) {
       var t = String(text2 ?? "").replace(/\r\n?/g, `
 `).replace(RE_ANSI, "");
-      return t = t.replace(/[ \t]*-+\s*More\s*-+[ \t]*(?:\x08+[ \t]*\x08*|\s*)/gi, "").replace(/^[ \t]*--More--[ \t]*$/gmi, "").replace(/\x08+/g, ""), t = t.replace(/^[ \t]*Press any key to continue.*$/gmi, "").replace(/^[ \t]*<--- More --->.*$/gmi, "").replace(/^[ \t]*\(Press.*Q to quit\).*$/gmi, ""), t;
+      return t = t.replace(/[ \t]*-+[ \t]*More[ \t]*-+[ \t]*(?:\x08+[ \t]*\x08*|[ \t]*)/gi, "").replace(/^[ \t]*--More--[ \t]*$/gmi, "").replace(/\x08+/g, ""), t = t.replace(/^[ \t]*Press any key to continue.*$/gmi, "").replace(/^[ \t]*<--- More --->.*$/gmi, "").replace(/^[ \t]*\(Press.*Q to quit\).*$/gmi, ""), t;
     };
     var CMDS = "(?:show|sh|display|esxcli|esxcfg-\\w+|vim-cmd|get|dir|more|cat|ip|ping|traceroute|tracert|lldpctl|lldpcli|ethtool|nmcli|networkctl|ifconfig|racadm)", RE_PROMPT = new RegExp("^\\s*(?:\\[[\\w.@-]+@([\\w.-]+)(?::[^\\]]*)?\\]\\s*[#$]?\\s+|(?:[\\w.-]+@)?([A-Za-z][\\w.-]*?)(?:\\((?:config[^)]*|active|passive|standby|non-functional|initial|[^)]{0,20})\\))?\\s*[#>]\\s*|[\\w.-]+@([\\w.-]+)(?::[^\\s$#]*)?\\s*[$#]\\s+|\\[[\\w.-]+@([\\w.-]+)\\s+[^\\]]*\\]\\s*[$#]\\s*)(" + CMDS + "(?:\\s.*|$))$", "i");
     NM2.splitSections = function(text2, fileName) {
@@ -18260,7 +18260,10 @@ dialog.nm-dlg {
             }), f.vlans.push(cur);
             return;
           }
-          cur && /^\s{20,}\S/.test(l) && P.ifList(l).forEach(function(p) {
+          // A wrapped port list is indented a long way; after a paging marker the indent can be lost, so a line of nothing but port names also counts.
+          cur && (/^\s{20,}\S/.test(l) || tidy2(l).split(/[,\s]+/).filter(Boolean).every(function(w) {
+            return /^[A-Za-z][A-Za-z-]*\d+(?:\/\d+)*(?:\.\d+)?$/.test(w);
+          })) && P.ifList(l).forEach(function(p) {
             cur.ports.push(p);
           });
         }
@@ -18670,9 +18673,13 @@ dialog.nm-dlg {
         }
         if (!(!started || !tidy2(l) || /^-{5,}/.test(tidy2(l)))) {
           var toks = tidy2(l).split(/\s+/);
+          // Dell OS9 writes a port as two words ("Te 0/1"); read as one name so "0/1" is not taken for a neighbour.
+          toks.length >= 2 && /^[A-Za-z]{2,3}$/.test(toks[0]) && /^\d+(?:\/\d+)+$/.test(toks[1]) && toks.splice(0, 2, toks[0] + toks[1]);
           if (!(toks.length < 3)) {
             var chassis = toks[toks.length - 1], local = toks[0], rest = toks.slice(1, -1), host = "", port = "";
             U.isMac(chassis) || (chassis = "", rest = toks.slice(1)), rest.length >= 2 ? (host = rest[0], port = rest.slice(1).join(" ")) : rest.length === 1 && (port = rest[0]), /^\(null\)$|^-$/i.test(host) && (host = "");
+            // No host name, just a two-word port ("Te 1/2"): the first word is part of the port, not a host.
+            rest.length === 2 && /^[A-Za-z][A-Za-z-]*$/.test(rest[0]) && /^\d+(?:\/\d+)+$/.test(rest[1]) && (host = "", port = rest.join(" "));
             var i = P.iface(f, local);
             i && i.nbrs.push({ proto: "lldp", name: host || chassis, chassis, rport: port, noName: !host, caps: [], portIdOnly: true });
           }
@@ -19738,7 +19745,7 @@ dialog.nm-dlg {
       }), hit && model.rev++, hit;
     }, NM2.hintFor = function(text2) {
       var t = String(text2 || "").slice(0, 6e3);
-      return /Dell (EMC )?Networking|PowerConnect|Force10|FTOS|DNOS|Dell N\d/i.test(t) ? "Dell output other than an OS10 configuration or OS10 show command is not read yet. N-series and OS9 are read from the configuration only." : /\bJunos\b|JUNOS|^\s*set (interfaces|protocols|routing-instances)\b/mi.test(t) ? "Juniper Junos output is not supported." : /Gateway of last resort|^\s*[CSOBRDEI*]\S*\s+\d+\.\d+\.\d+\.\d+\/\d+/m.test(t) || /Active Routes:|IPv4 Route Table/i.test(t) ? "This looks like a routing table. Add routing tables and traceroutes with Import > Add from pasted output (classic)." : /traceroute to|Tracing route to/i.test(t) ? "This looks like a traceroute. Add it with Import > Add from pasted output (classic)." : /\bArista\b|\bEOS\b/.test(t) ? "Arista EOS is close to Cisco syntax, but only the parts that match a Cisco format are read." : /Get-NetAdapter|ipconfig\s*\/all|Windows IP Configuration/i.test(t) ? "Windows network output is not read yet. Add the server by hand, or import the switch side so it is found from its neighbour reports." : "";
+      return /Dell (EMC )?Networking|PowerConnect|Force10|FTOS|DNOS|Dell N\d/i.test(t) ? "Dell output other than an OS10 configuration or OS10 show command is not read yet. N-series and OS9 are read from the configuration only." : /\bJunos\b|JUNOS|^\s*set (interfaces|protocols|routing-instances)\b|^\s*Interface\s+Admin\s+Link\s+Proto\b|Local Interface\s+Parent Interface|^\s*host-name\s+\S+;\s*$|^\s*(?:ge|xe|et|ae)-?[\d\/]*\s*\{\s*$/mi.test(t) ? "Juniper Junos output is not supported." : /Gateway of last resort|^\s*[CSOBRDEI*]\S*\s+\d+\.\d+\.\d+\.\d+\/\d+/m.test(t) || /Active Routes:|IPv4 Route Table/i.test(t) ? "This looks like a routing table. Add routing tables and traceroutes with Import > Add from pasted output (classic)." : /traceroute to|Tracing route to/i.test(t) ? "This looks like a traceroute. Add it with Import > Add from pasted output (classic)." : /\bArista\b|\bEOS\b/.test(t) ? "Arista EOS is close to Cisco syntax, but only the parts that match a Cisco format are read." : /Get-NetAdapter|ipconfig\s*\/all|Windows IP Configuration/i.test(t) ? "Windows network output is not read yet. Add the server by hand, or import the switch side so it is found from its neighbour reports." : "";
     }, NM2.deviceByName = function(model, name) {
       var r = NM2.identify(model, { name });
       return r.status === "match" ? model.devices[r.id] : null;
@@ -20420,6 +20427,12 @@ dialog.nm-dlg {
             pv.issues.forEach(function(t) {
               (co[id] = co[id] || []).push({ ik, name: i.name, text: t });
             });
+          }
+          if (c && c.shut === true && i.nbrs && i.nbrs.length) {
+            var nbrAt = Math.max.apply(null, i.nbrs.map(function(n) {
+              return n.at || 0;
+            })), nbrNewer = nbrAt >= i.cfgAt;
+            rev.push({ cat: "state-conflict", sev: nbrNewer ? "med" : "info", title: d.name + " " + i.name + ": configuration says shutdown, but a neighbour was reported", detail: nbrNewer ? "The neighbour report (" + NM2.ago(nbrAt) + ") is newer than the configuration (" + NM2.ago(i.cfgAt) + "), so the port may have been re-enabled since." : "The configuration (" + NM2.ago(i.cfgAt) + ") is newer than the neighbour report (" + NM2.ago(nbrAt) + "): the port was probably shut down after that capture.", devs: [id], ifaces: [{ dev: id, ifk: ik }], key: "shutnbr|" + id + "|" + ik });
           }
           if (c && st && c.shut === true && st.st === "up") {
             var newer = st.at >= i.cfgAt;
