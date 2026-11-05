@@ -491,5 +491,20 @@ test('Junos output names Junos as the reason it was not read', () => {
   }
 });
 
+console.log('Dell OS9 and OS10 LLDP identification');
+test('the shared LLDP header is labelled OS9 or OS10 only from the port names', () => {
+  const NM = fresh(), one = (n) => NM.parseInputs([{ name: n, text: fx(n) }])[0];
+  const o9 = one('os9-lldp.txt'), o10 = one('os10-lldp.txt'), un = one('dell-lldp-unknown.txt');
+  eq(o9.label, 'Dell OS9 show lldp neighbors'); eq(o10.label, 'Dell OS10 show lldp neighbors');
+  eq(un.label, 'Dell show lldp neighbors (OS9 or OS10 not identified)');
+  eq(o9.facts.ifaces.map((i) => i.key), ['te0/1', 'te0/2', 'fo0/60']); eq(o10.facts.ifaces.map((i) => i.key), ['eth1/1/1', 'eth1/1/3', 'mgmt1/1/1']);
+  for (const x of [o9, o10, un]) { eq(x.facts.device.vendor, 'Dell'); ok(!x.facts.device.os, 'an LLDP table must not set the OS version'); eq(x.status, 'parsed'); }
+});
+test('an LLDP table does not overwrite the OS recorded from the configuration', () => {
+  const NM = fresh(), m = NM.newModel(); imp(NM, m, ['os9.cfg'], T0); eq(byName(m, 'FTOS-1').os, 'Dell OS9 (FTOS)');
+  imp(NM, m, ['os9-lldp.txt'], T0 + H); eq(realCount(m) >= 1, true); eq(byName(m, 'FTOS-1').os, 'Dell OS9 (FTOS)', 'the LLDP table must not change the OS');
+  ok(byName(m, 'FTOS-1').ifaces['te0/1'].nbrs.length === 1, 'the neighbours reached FTOS-1');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed' + (fail ? ': ' + failures.join('; ') : ''));
 process.exit(fail ? 1 : 0);

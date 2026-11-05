@@ -18665,7 +18665,7 @@ dialog.nm-dlg {
     } }), NM2.register({ id: "dell.lldp", vendor: "dell", cat: "nbr", label: "Dell OS10 show lldp neighbors", starts: [/^\s*Loc PortID\s+Rem Host Name/i], score: function(t, cmd) {
       return /^\s*Loc PortID\s+Rem Host Name\s+Rem Port Id/mi.test(t) ? cmdIs(cmd, /^show lldp neighbors?/) ? 0.97 : 0.93 : 0;
     }, parse: function(t) {
-      var f = P.facts("dell.lldp", "nbr", "Dell OS10 show lldp neighbors"), started = false;
+      var f = P.facts("dell.lldp", "nbr", "Dell OS10 show lldp neighbors"), started = false, os9Rows = 0, os10Rows = 0;
       return P.lines(t).forEach(function(l) {
         if (/^\s*Loc PortID\s+Rem Host Name/i.test(l)) {
           started = true;
@@ -18674,7 +18674,9 @@ dialog.nm-dlg {
         if (!(!started || !tidy2(l) || /^-{5,}/.test(tidy2(l)))) {
           var toks = tidy2(l).split(/\s+/);
           // Dell OS9 writes a port as two words ("Te 0/1"); read as one name so "0/1" is not taken for a neighbour.
-          toks.length >= 2 && /^[A-Za-z]{2,3}$/.test(toks[0]) && /^\d+(?:\/\d+)+$/.test(toks[1]) && toks.splice(0, 2, toks[0] + toks[1]);
+          // OS9 and OS10 share this table header. Only the port names tell them apart: "Te 0/1" is OS9, "ethernet1/1/1" is OS10.
+          toks.length >= 2 && /^[A-Za-z]{2,3}$/.test(toks[0]) && /^\d+(?:\/\d+)+$/.test(toks[1]) && (toks.splice(0, 2, toks[0] + toks[1]), os9Rows++);
+          /^(?:ethernet|mgmt)\d+\/\d+\/\d+/i.test(toks[0]) && os10Rows++;
           if (!(toks.length < 3)) {
             var chassis = toks[toks.length - 1], local = toks[0], rest = toks.slice(1, -1), host = "", port = "";
             U.isMac(chassis) || (chassis = "", rest = toks.slice(1)), rest.length >= 2 ? (host = rest[0], port = rest.slice(1).join(" ")) : rest.length === 1 && (port = rest[0]), /^\(null\)$|^-$/i.test(host) && (host = "");
@@ -18684,7 +18686,7 @@ dialog.nm-dlg {
             i && i.nbrs.push({ proto: "lldp", name: host || chassis, chassis, rport: port, noName: !host, caps: [], portIdOnly: true });
           }
         }
-      }), P.finish(f);
+      }), f.device.vendor = "Dell", f.label = os9Rows && !os10Rows ? "Dell OS9 show lldp neighbors" : os10Rows && !os9Rows ? "Dell OS10 show lldp neighbors" : "Dell show lldp neighbors (OS9 or OS10 not identified)", P.finish(f);
     } }), NM2.register({ id: "dell.pc", vendor: "dell", cat: "pc", label: "Dell OS10 show port-channel summary", starts: [/^\s*Group\s+Port-Channel\s+Type\s+Protocol\s+Member Ports/i], score: function(t, cmd) {
       return /^\s*Group\s+Port-Channel\s+Type\s+Protocol\s+Member Ports/mi.test(t) ? cmdIs(cmd, /port-channel summary/) ? 0.97 : 0.93 : 0;
     }, parse: function(t) {
@@ -19355,7 +19357,7 @@ dialog.nm-dlg {
       sec.parser = det.parser.id, sec.vendor = det.parser.vendor, sec.label = det.parser.label, sec.cat = det.parser.cat, sec.score = det.score;
       try {
         var f = det.parser.parse(s.text, { host: s.host, cmd: s.cmd });
-        sec.facts = f, sec.warnings = f.warnings || [], f.partial && (sec.partial = true), sec.status = P.useful(f) ? "parsed" : "empty", sec.status === "empty" && (sec.excerpt = P.redact(s.text.split(`
+        f.label && (sec.label = f.label), sec.facts = f, sec.warnings = f.warnings || [], f.partial && (sec.partial = true), sec.status = P.useful(f) ? "parsed" : "empty", sec.status === "empty" && (sec.excerpt = P.redact(s.text.split(`
 `).filter(function(l) {
           return tidy2(l);
         }).slice(0, 3).join(`

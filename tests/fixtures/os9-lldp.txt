@@ -1,0 +1,7 @@
+FTOS-1#show lldp neighbors
+ Loc PortID   Rem Host Name     Rem Port Id         Rem Chassis Id
+ ---------------------------------------------------------------------
+ Te 0/1       S4810-2           TenGigabitEthernet 0/1  00:01:e8:aa:bb:cc
+ Te 0/2       -                 Te 1/2              00:01:e8:aa:bb:dd
+ Fo 0/60      CORE-1            hundredGigE 1/1     00:01:e8:11:22:33
+FTOS-1#
