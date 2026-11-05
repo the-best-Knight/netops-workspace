@@ -18,6 +18,6 @@ jobs:
       - name: Engine tests
         run: node tests/engine/suite.mjs
       - name: Tool tests (sanitizer, config diff, calculator, routing, switching, switch lab, vSphere, DNS, ping, lessons, content, script repository, Dell OS9 cheat sheet, saved progress)
-        run: for t in sanitizer configdiff calculator routing switching switchlab pcdiag vsphere dns ping lessons content scriptrepo os9cheat progress; do node tests/engine/$t.mjs || exit 1; done
+        run: for t in sanitizer configdiff calculator routing switching switchlab pcdiag vsphere dns ping lessons content scriptrepo os9cheat os10native progress; do node tests/engine/$t.mjs || exit 1; done
       - name: Engine fuzz run
         run: node tests/engine/fuzz.mjs 400

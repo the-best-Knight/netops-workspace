@@ -18,7 +18,7 @@ node tests/engine/fuzz.mjs 800   # 800 batches of damaged and mixed-up device ou
 ```
 
 ```sh
-for t in sanitizer configdiff calculator routing switching switchlab pcdiag vsphere dns ping lessons content scriptrepo os9cheat uitokens progress; do node tests/engine/$t.mjs; done
+for t in sanitizer configdiff calculator routing switching switchlab pcdiag vsphere dns ping lessons content scriptrepo os9cheat os10native uitokens progress; do node tests/engine/$t.mjs; done
 ```
 
 These run the other tools' own code, taken from `index.html` with no browser: `tests/engine/tool.mjs` cuts a tool's script out, runs it against a stub page, and hands back the functions a test asks for (`__set` and `__get` reach its other variables). Each file is named for its tool and its checks carry the finding ID of the technical review they came from.
@@ -37,6 +37,7 @@ These run the other tools' own code, taken from `index.html` with no browser: `t
 | `lessons` | The access list lesson is fixed by correcting the rule |
 | `content` | Wording claims in the README and the reference data, and the Dell OS9 Quick answer links |
 | `os9cheat` | Dell OS9 cheat sheet rows: structure, sources, OS9-not-OS10 syntax, mode order, disrupts flags, documentation addresses, and that Cisco, OS10 and Junos rows and the OS10 Fault Lab are unchanged |
+| `os10native` | Dell OS10 native VLAN: `switchport trunk native vlan` is invalid on OS10, `switchport access vlan` on a trunk sets the untagged VLAN and keeps the trunk, Cheat Sheet rows match, Cisco unchanged, every Extreme incident still solvable on Dell |
 | `uitokens` | Contrast of the shared colours in both themes (4.5:1), the four embedded font files, one UI font and one monospace font, nothing loaded from outside, font-src limited to `data:` |
 | `progress` | Switch Lab lesson progress and extreme-level progress with two tabs open: both tabs' lessons are kept, the Cisco/Dell choice is not overwritten, damaged or old saved data is handled, rapid saves lose nothing |
 
