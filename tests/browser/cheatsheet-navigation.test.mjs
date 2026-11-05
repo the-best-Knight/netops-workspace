@@ -29,6 +29,21 @@ S.ok('the switch introduction is short and keeps the write-warning legend; the r
 const rows = await S.frame(`const rs = [...d.querySelectorAll('.sheet-row')]; const withMore = rs.filter(r => r.querySelector('details.row-more')); const btn = rs.slice(0, 5).map(r => { const b = r.querySelector('.cmd-btn'); const q = b && b.getBoundingClientRect(); return !!q && q.width > 40 && q.height > 14; }); return { rows: rs.length, withMore: withMore.length, open: withMore.filter(r => r.querySelector('details.row-more').open).length, copyOk: btn.every(Boolean), copyLabel: !!rs[0].querySelector('.cmd-copy') };`);
 S.ok('rows keep a visible copy button, and the Switch Lab detail line is collapsed by default', rows.rows > 20 && rows.copyOk && rows.copyLabel && rows.withMore > 5 && rows.open === 0, rows);
 
+// examples sit inside the collapsed row details; the copy button never needs them opened
+await pick('cisco');
+const ex = await S.frame(`const t = (q) => [...d.querySelectorAll('.sheet-row')].find(r => r.querySelector('.cmd-btn') && decodeURIComponent(r.querySelector('.cmd-btn').dataset.cmd).replace(/\\s+/g, ' ').trim() === q);
+  const one = (q) => { const r = t(q); if (!r) return null; const det = r.querySelector('details.row-more'), b = r.querySelector('.cmd-btn').getBoundingClientRect(); const closedH = det && det.querySelector('.row-ex') ? (det.querySelector('.row-ex').checkVisibility({ contentVisibilityAuto: true }) ? 1 : 0) : -1; det && (det.open = true); const e = det && det.querySelector('.row-ex'); const out = { summary: det ? det.querySelector('summary').textContent : '', hiddenWhenClosed: closedH === 0, kind: e ? e.querySelector('.row-ex-k').textContent : '', text: e ? e.innerText : '', copyVisible: b.width > 40 && b.height > 14 }; det && (det.open = false); return out; };
+  return { status: one('show interfaces status'), conf: one('configure terminal'), access: one('switchport mode access switchport access vlan <vlan-id>'), anyOpen: [...d.querySelectorAll('details.row-more')].some(x => x.open) };`);
+S.ok('show interfaces status has an example output, hidden until Details is opened, labelled illustrative and version-dependent', ex.status && ex.status.hiddenWhenClosed && /Details and example/.test(ex.status.summary) && /Illustrative and shortened/.test(ex.status.kind) && /varies|vary/.test(ex.status.kind) && /notconnect/.test(ex.status.text) && ex.status.copyVisible, ex.status);
+S.ok('configure terminal shows how the prompt changes, not an invented success message', ex.conf && /How the prompt changes/.test(ex.conf.kind) && /SW1\(config\)#/.test(ex.conf.text), ex.conf);
+S.ok('a configuration row says what it changes and how to check it', ex.access && /What it changes, and how to check/.test(ex.access.kind) && /untagged/.test(ex.access.text), ex.access);
+S.ok('rows stay compact: no details are open by default', !ex.anyOpen, ex);
+await pick('dell');
+const dex = await S.frame(`const r = [...d.querySelectorAll('.sheet-row')].find(r => r.querySelector('.cmd-btn') && decodeURIComponent(r.querySelector('.cmd-btn').dataset.cmd) === 'configure terminal'); const det = r && r.querySelector('details.row-more'); det && (det.open = true); const t = det ? det.innerText : ''; det && (det.open = false); return t;`);
+S.ok('the Dell OS10 configure terminal row shows the OS10 prompt change', /SW1\(config\)#/.test(dex) && !/Enter configuration commands/.test(dex), dex);
+const trunk = await search('add vlan to trunk');
+S.ok('Dell OS10 trunk rows use the documented syntax (no add or remove keyword)', !/allowed vlan (add|remove) 40/.test(await S.frame(`return [...d.querySelectorAll('.sheet-row .cmd-text')].map(x => x.innerText).join('\\n');`)) && /switchport trunk allowed vlan 40/.test(trunk), trunk.slice(0, 300));
+
 // Windows
 await S.frame(`d.querySelector('.mode-pills [data-mode=windows]').click(); await new Promise(r=>setTimeout(r,300)); return 1;`);
 S.ok('Windows has no Command Prompt choice and no second row', !(await S.frame(`return /Command Prompt/.test(d.querySelector('.filter-block, .sheet-filter-block').innerText) || !!d.querySelector('#subVendors [data-v=cmd], #sheetVendor option[value=cmd]');`)) && !(await groupShown('sysGroup')), 0);
@@ -52,5 +67,5 @@ S.ok('RHEL commands that change the system carry the change badge', (await S.fra
 // VMware version wording
 await S.frame(`d.querySelector('.mode-pills [data-mode=vmware]').click(); await new Promise(r=>setTimeout(r,300)); d.querySelector('#subVendors [data-v=esxi]').click(); await new Promise(r=>setTimeout(r,300)); return 1;`);
 const v = await search('esxi version');
-S.ok('the ESXi version row explains that 8.0.10 is not a release and that 9.1 is not checked', /no .{0,3}8\.0\.10.{0,3} release/.test(v) && /not checked on 9\.1/.test(v), v.slice(0, 400));
+S.ok('the ESXi version row explains that 8.0.10 is not a release, names VCF 9.1.0 with its date and source, and says the rows are not checked on 9.x', /no .{0,3}8\.0\.10.{0,3} release/.test(v) && /VMware Cloud Foundation 9\.1\.0 was released on 12 May 2026 \(Broadcom KB 314608\)/.test(v) && /not checked on 9\.x/.test(v), v.slice(0, 500));
 S.finish();
