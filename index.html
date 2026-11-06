@@ -26540,7 +26540,7 @@ dialog.nm-dlg {
     });
     // A first pass finds which switches have links going down (to a lower row, or to the next line of a ring or a wrapped row)
     // and where those links cross the row the end devices would use.
-    var first = nmxLayeredCore(infra, null, list.length), at = /* @__PURE__ */ Object.create(null), side = /* @__PURE__ */ Object.create(null), off = /* @__PURE__ */ Object.create(null);
+    var first = nmxLayeredCore(infra, null, list.length), at = /* @__PURE__ */ Object.create(null), side = /* @__PURE__ */ Object.create(null), off = /* @__PURE__ */ Object.create(null), beside = /* @__PURE__ */ Object.create(null);
     first.forEach(function(o) {
       at[o.n.id] = o;
     }), Object.keys(kids).forEach(function(pid) {
@@ -26560,9 +26560,21 @@ dialog.nm-dlg {
         }), mid = rowX.reduce(function(a2, b2) {
           return a2 + b2;
         }, 0) / rowX.length;
-        Math.min(dR, dL) > DEV_W ? (kids[pid].forEach(function(i) {
+        // Links that fan out to both sides leave no room under the switch. A single end device then sits beside the switch on
+        // its own row, on the side with no link along the row (two dual-homed access switches each keep their PC next to
+        // them); otherwise the end devices go in the next row, ordered next to their switch.
+        var along = G.adj[G.idx[pid]].map(function(w) {
+          var q = at[list[w].id];
+          return q && q.y === po.y ? q.x + q.w / 2 - pcx : 0;
+        }).filter(Boolean), out = along.every(function(dx) {
+          return dx > 0;
+        }) ? -1 : along.every(function(dx) {
+          return dx < 0;
+        }) ? 1 : 0;
+        !along.length && (out = pcx < mid ? -1 : 1);
+        Math.min(dR, dL) <= DEV_W ? (side[pid] = Math.abs(dR - dL) < 1 ? pcx < mid ? -1 : 1 : dR < dL ? 1 : -1, off[pid] = Math.min(dR, dL)) : kids[pid].length === 1 && out ? beside[pid] = out : (kids[pid].forEach(function(i) {
           leaf[i] = false;
-        }), delete kids[pid]) : (side[pid] = Math.abs(dR - dL) < 1 ? pcx < mid ? -1 : 1 : dR < dL ? 1 : -1, off[pid] = Math.min(dR, dL));
+        }), delete kids[pid]);
       }
     }), infra = notLeaf();
     // more than six end devices on one switch go on several lines of at most six
@@ -26573,12 +26585,12 @@ dialog.nm-dlg {
         var x = a2.name.toLowerCase(), y = b2.name.toLowerCase();
         return x < y ? -1 : x > y ? 1 : a2.id - b2.id;
       }), lines = Math.ceil(ks.length / PER), per = Math.ceil(ks.length / lines);
-      shape[pid] = { ks, per, lines, w: per * S - (S - DEV_W) }, wOf[pid] = Math.max(DEV_W, side[pid] ? DEV_W / 2 + off[pid] + shape[pid].w : shape[pid].w);
+      shape[pid] = beside[pid] ? { ks, per: 1, lines: 0, w: DEV_W } : { ks, per, lines, w: per * S - (S - DEV_W) }, wOf[pid] = beside[pid] ? 2 * DEV_W + 84 : Math.max(DEV_W, side[pid] ? DEV_W / 2 + off[pid] + shape[pid].w : shape[pid].w);
     });
     // The wider slots move devices a little, so the side room is checked again against the links where they end up, and the
     // slots are widened until no link to a lower line crosses the end devices (at most three rounds).
     var nodeX = function(o) {
-      var sd = side[o.n.id] || 0;
+      var sd = side[o.n.id] || beside[o.n.id] || 0;
       return sd > 0 ? o.x : sd < 0 ? o.x + o.w - DEV_W : o.x + (o.w - DEV_W) / 2;
     };
     for (var round = 0, base, grow = true; grow && round < 3; round++) {
@@ -26606,7 +26618,8 @@ dialog.nm-dlg {
     });
     var out = [];
     base.forEach(function(o) {
-      var sh = shape[o.n.id], sd = side[o.n.id] || 0, x = sd > 0 ? o.x : sd < 0 ? o.x + o.w - DEV_W : o.x + (o.w - DEV_W) / 2, y = o.y + extra[o.y];
+      var sh = shape[o.n.id], bs = beside[o.n.id], sd = side[o.n.id] || bs || 0, x = sd > 0 ? o.x : sd < 0 ? o.x + o.w - DEV_W : o.x + (o.w - DEV_W) / 2, y = o.y + extra[o.y];
+      if (bs) return out.push({ n: sh.ks[0], x: bs > 0 ? x + DEV_W + 84 : x - 84 - DEV_W, y }, { n: o.n, x, y });
       sh && sh.ks.forEach(function(k, i) {
         var ln = Math.floor(i / sh.per), cnt = Math.min(sh.per, sh.ks.length - ln * sh.per), cx = x + DEV_W / 2;
         // to the side, the end devices nearest the switch fill first; under it, a short last line is centred
@@ -26833,8 +26846,11 @@ dialog.nm-dlg {
         var mid = wrap(rest), gapW = mid[0].reduce(function(a, u2) {
           return a + slot(u2) + GAP;
         }, 0);
-        return wrap(term).map(function(part) {
-          return { part, gapAt: Math.ceil(part.length / 2), gapW };
+        // the links from above fan out toward the switches, so a line nearer the top needs a narrower gap: the share of the way
+        // down to the switches, plus one device width of margin
+        var tl = wrap(term);
+        return tl.map(function(part, k) {
+          return { part, gapAt: Math.ceil(part.length / 2), gapW: Math.min(gapW, Math.round(gapW * (k + 1) / (tl.length + 1)) + DEV_W) };
         }).concat(mid);
       };
       var cellH = DEV_H + 74, y = 0, placed = [];

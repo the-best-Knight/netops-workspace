@@ -80,4 +80,19 @@ await fr(`w.confirm = () => true; return w.__nmx.load(${JSON.stringify(JSON.stri
 await J(`w.__nmx.arrange(); w.__nmx.render(); return 1;`); const R = await metrics();
 const rows = new Set(Object.entries(R.pos).filter(([k]) => /RING/.test(k)).map(([, p]) => p[1]));
 ok('ring: the six switches are on two lines, nothing overlaps and no straight link runs through a device', rows.size === 2 && R.overlaps === 0 && R.through === 0, R);
+// 6. dual-homed servers on two access switches, a PC on each switch, and an ESXi host on the core over an LACP pair: every physical link stays its own link,
+// the servers sit under both switches, and each PC stays next to its own switch instead of at the far end of the server row
+const dual = (() => { const nodes = [], links = []; let id = 0; const add = (name, type) => (nodes.push({ id: ++id, kind: 'device', name, type, x: 0, y: 0 }), id), ln = (a, b, ifA, ifB) => links.push({ from: a, to: b, ifA: ifA || '', ifB: ifB || '' });
+  const c = add('CORE-01', 'core'), a = add('SW-A', 'switch'), b = add('SW-B', 'switch'); ln(c, a, 'Gi1/0/1', 'Gi1/0/49'); ln(c, b, 'Gi1/0/2', 'Gi1/0/49'); ln(a, b, 'Gi1/0/50', 'Gi1/0/50');
+  for (let i = 1; i <= 6; i++) { const sv = add('SRV-0' + i, 'server'); ln(sv, a, 'NIC1', 'Gi1/0/' + i); ln(sv, b, 'NIC2', 'Gi1/0/' + i); }
+  const esx = add('ESX-LACP', 'esxi'); ln(esx, c, 'vmnic0', 'Te1/1/1'); ln(esx, c, 'vmnic1', 'Te1/1/2');
+  ln(add('PC-01', 'client'), a, '', 'Gi1/0/40'); ln(add('PC-02', 'client'), b, '', 'Gi1/0/40'); return { nodes, links }; })();
+await fr(`w.confirm = () => true; return w.__nmx.load(${JSON.stringify(JSON.stringify(dual))});`); await wait(300);
+const before6 = await J(`return w.__nmx.links().map(l => [l.from, l.to, l.ifA, l.ifB]).sort();`);
+await J(`w.__nmx.arrange(); w.__nmx.render(); return 1;`); const D = await metrics(), P6 = D.pos;
+ok('dual-homed: every physical link is still its own link, the LACP pair included', JSON.stringify(await J(`return w.__nmx.links().map(l => [l.from, l.to, l.ifA, l.ifB]).sort();`)) === JSON.stringify(before6) && before6.length === 19, before6.length);
+ok('dual-homed: nothing overlaps and no straight link runs through a device', D.overlaps === 0 && D.through === 0, D);
+ok('dual-homed: the servers are below both switches', [1, 2, 3, 4, 5, 6].every((i) => P6['SRV-0' + i][1] > P6['SW-A'][1] && P6['SRV-0' + i][1] > P6['SW-B'][1]), P6);
+const pcd = [['PC-01', 'SW-A'], ['PC-02', 'SW-B']].map(([p, s]) => Math.round(Math.hypot(P6[p][0] - P6[s][0], P6[p][1] - P6[s][1])));
+ok('dual-homed: each PC stays within 260 px of its own switch, and the LACP host near the core', pcd.every((x) => x <= 260) && Math.hypot(P6['ESX-LACP'][0] - P6['CORE-01'][0], P6['ESX-LACP'][1] - P6['CORE-01'][1]) <= 260, { pcd, esx: P6['ESX-LACP'], core: P6['CORE-01'] });
 T.finish();
