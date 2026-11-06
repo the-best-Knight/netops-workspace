@@ -1,6 +1,6 @@
-# Workplace v1.10 integration: Topology Builder, 2026-11-05
+# v1.10 prototype integration: Topology Builder, 2026-11-05
 
-This pass compares the Topology Builder in the workplace copy labelled NetOps Workspace 1.10 with GitHub `main`, takes what is worth keeping, rewrites what was weak, and leaves out what would make the tool less accurate. The workplace file was not copied over `index.html`. Nothing is pushed.
+This pass compares the Topology Builder in the local prototype labelled NetOps Workspace 1.10 with GitHub `main`, takes what is worth keeping, rewrites what was weak, and leaves out what would make the tool less accurate. The prototype file was not copied over `index.html`. Nothing is pushed.
 
 ## 1. Starting point
 
@@ -8,7 +8,7 @@ This pass compares the Topology Builder in the workplace copy labelled NetOps Wo
 - Working tree clean, nothing unpushed.
 - Baseline tests on that commit, before any change: 20 syntax checks, 95 engine tests, 36 of 36 browser test files.
 
-## 2. The workplace file
+## 2. The prototype file
 
 | | |
 | --- | --- |
@@ -27,9 +27,9 @@ So the useful part is small and easy to isolate. Copying the file over `index.ht
 
 ## 3. Change inventory
 
-Every change in the workplace Topology Builder, against `166fd46`:
+Every change in the prototype Topology Builder, against `166fd46`:
 
-| # | Workplace change | Current GitHub behaviour | Benefit | Risk | Decision |
+| # | Prototype change | Current GitHub behaviour | Benefit | Risk | Decision |
 | --- | --- | --- | --- | --- | --- |
 | W1 | `guessKind`: `vmh-N` names are ESXi | ESXi only from `esx` names or platform | Real naming pattern | Low | **Integrate**, as a whole name part |
 | W2 | `guessKind`: names with `ap`, `pc`, `cam`, `printer`, `phone`, `badge`, `laptop` return `client` | Kind from LLDP/CDP capabilities, `unknown` from name | Fills gaps | `client` is not an engine kind: the icon and legend for AP/phone/endpoint are lost. These rules run before the capabilities, so a name beats evidence | **Improve**: name parts map to `ap`, `phone`, `endpoint`, only when there is no stronger evidence |
@@ -50,7 +50,7 @@ Every change in the workplace Topology Builder, against `166fd46`:
 | W17 | Layout: rows equal to rank only; graph distance and the peer rule removed | Rows from graph layering plus rank | Same roles share a row | Ignores real relationships: chained switches and rings flatten into one row. 1,918 crossings on the large network vs 552 | **Reject** |
 | W18 | Version label 1.10 | 1.7 | | | **Not taken**: a release decision for you |
 
-I found no security or persistence change in the workplace copy: it touches no storage, export, CSP or sanitising code. Its persistence code is simply the older, pre-R-01 version.
+I found no security or persistence change in the prototype: it touches no storage, export, CSP or sanitising code. Its persistence code is simply the older, pre-R-01 version.
 
 ## 4. Accepted changes
 
@@ -88,9 +88,9 @@ Two old name bugs went away with the part-based reading: any name starting with 
 - **W8** catch-all prompt: any text before `#` or `>` followed by `show` starts a new device.
 - **W13** and the drop in **W11**: throw away one-sided observations.
 - **W5** `edge` is a router: wrong as often as right.
-- **W16** rows from names and **W17** rows from rank only: they place devices by naming convention instead of by their links. With the workplace layout, `CORE-TEST-PC` is drawn above its own switch (hierarchy violation in the misleading-names fixture) and the large network has 1,918 crossings.
+- **W16** rows from names and **W17** rows from rank only: they place devices by naming convention instead of by their links. With the prototype layout, `CORE-TEST-PC` is drawn above its own switch (hierarchy violation in the misleading-names fixture) and the large network has 1,918 crossings.
 - **W18** version bump: left for you.
-- The workplace Log Sanitizer, Switch Lab, Dell OS10 rows and Topology Builder autosave are pre-Wave 1 and were not used.
+- The prototype's Log Sanitizer, Switch Lab, Dell OS10 rows and Topology Builder autosave are pre-Wave 1 and were not used.
 
 ## 7. Device classification findings
 
@@ -154,10 +154,10 @@ Unchanged: pinned devices are left alone and the rest is placed beside them; dev
 
 ### How it was measured
 
-`docs/reviews/evidence/2026-11-05-layout/layout-compare.mjs` cuts the layout code (`NMX_RANK` to `nmxArrange`) out of each build and runs it in Node on the same ten graphs from `fixtures.mjs`, with the same 1280x800 aspect and 20 px grid snap. A is `2638288`, B is the workplace file, C is this change. Node kinds are the same for all three, so only the layout differs. Run it with:
+`docs/reviews/evidence/2026-11-05-layout/layout-compare.mjs` cuts the layout code (`NMX_RANK` to `nmxArrange`) out of each build and runs it in Node on the same ten graphs from `fixtures.mjs`, with the same 1280x800 aspect and 20 px grid snap. A is `2638288`, B is the prototype file, C is this change. Node kinds are the same for all three, so only the layout differs. Run it with:
 
 ```sh
-node docs/reviews/evidence/2026-11-05-layout/layout-compare.mjs A=/path/to/old.html B=/path/to/workplace.html C=index.html
+node docs/reviews/evidence/2026-11-05-layout/layout-compare.mjs A=/path/to/old.html B=/path/to/prototype.html C=index.html
 ```
 
 Columns: overlaps; crossings (straight links, parallel links counted once); through (links whose straight line crosses a device box with 6 px margin; the app bends these around boxes afterwards); hierarchy violations (an upper-tier device drawn below a lower-tier neighbour); end-device distance to its switch, mean and max; total link length; long links (over 2.5 times the median); links too short for both interface labels (under 78 px between boxes, where the label spacing gives way); width and height; zoom Fit would need in 1280x800; devices that move when the same graph is given in a different order; time per run.
@@ -239,7 +239,7 @@ Taken in the real page, 1280x800, headless Firefox, after Auto Arrange and Fit. 
 
 ## 13. New regression tests
 
-- `tests/engine/suite.mjs`, W-01 to W-14 (109 tests in total, 95 before). On `2638288`, 9 of the 14 fail; the other 5 guard behaviour that was already right and that the workplace copy breaks or could break (configuration beats name, OS9 ports, MAC-only rows kept, duplicate imports, one ESXi host on two leaves). On the workplace file, W-01, 02, 03, 05, 07, 09, 11 and 12 fail, as do F-02a, d, f, g, h, i and j and the existing LLDP kinds test.
+- `tests/engine/suite.mjs`, W-01 to W-14 (109 tests in total, 95 before). On `2638288`, 9 of the 14 fail; the other 5 guard behaviour that was already right and that the prototype breaks or could break (configuration beats name, OS9 ports, MAC-only rows kept, duplicate imports, one ESXi host on two leaves). On the prototype file, W-01, 02, 03, 05, 07, 09, 11 and 12 fail, as do F-02a, d, f, g, h, i and j and the existing LLDP kinds test.
 - `tests/browser/topology-auto-arrange.test.mjs`, 18 checks: real import of Dell + ESXi with sanitized prompts, a later import not moving drawn devices, Auto Arrange keeping links and interface names with no overlaps and no straight link through a device, the 146-device network (overlaps, end devices within 320 px and below their switch, under 5000 px wide, firewalls and cores on top, under 1.5 s, repeatable), a pinned device, a saved project loading back, and the ring.
 - `tests/README.md` and `CHANGELOG.md` updated.
 
@@ -267,7 +267,7 @@ Wave 1 protections, checked by name: F-04 (`sanitizer`, 61), F-02 (F-02a to F-02
 - No new network request, library, CDN or API. The diff adds no `http`, `fetch`, `eval`, `innerHTML` or CSP change.
 - Imported names reach the page through the same escaping as before. Warnings quote at most 70 characters of a row, as the existing ones do.
 - The fuzz run (damaged and mixed output, 800 batches) covers the new parser branches with no exception.
-- Every name, address and MAC in fixtures, tests and this report is made up. The workplace file's own example host name was replaced with a fictional one.
+- Every name, address and MAC in fixtures, tests and this report is made up. The prototype file's own example host name was replaced with a fictional one.
 
 ## 17. Limits
 
@@ -277,7 +277,7 @@ Wave 1 protections, checked by name: F-04 (`sanitizer`, 61), F-02 (F-02a to F-02
 - **Layout** is still straight lines between box centres. Through-links are reduced, not removed; the app bends the rest around boxes when it can. Big networks still need zoom or zones.
 - **Existing saved kinds** are not re-guessed (section 12).
 - Not checked on real Dell, Cisco or ESXi hardware. Samples are synthetic, written to match the documented formats.
-- `guessType` in the drawing code's quick neighbour paste was not changed; the workplace copy did not change it either.
+- `guessType` in the drawing code's quick neighbour paste was not changed; the prototype did not change it either.
 
 ## 18. Local commits
 
