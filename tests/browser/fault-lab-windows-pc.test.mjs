@@ -2,6 +2,9 @@
 // the device, typed commands, history recall, focus, tracert, traceroute not being a Windows command, and switches unchanged.
 import { session } from './lib.mjs';
 import { tmpdir } from 'node:os';
+import { mkdirSync } from 'node:fs';
+// screenshots go to the system temp folder; a fresh machine (CI) does not have the folder yet
+mkdirSync(tmpdir() + '/kit-test-shots', { recursive: true });
 const S = await session();
 await S.load('#fault-lab', 2500);
 const type = async (text) => { for (const ch of text) await S.press(ch); };
