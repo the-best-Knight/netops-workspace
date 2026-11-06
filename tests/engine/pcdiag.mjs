@@ -309,4 +309,19 @@ test('W2-12 PC addressing stays read-only through cmd, PowerShell, route and DHC
   }
 });
 
+test('W2-13 guided labs with faults added, alone and combined (wrong access VLAN, VLAN pruned from trunks, routes lost, gateway shut plus a trunk cut): ping and tracert agree and match canPing', () => {
+  let n = 0; const canPing = T.__get('canPing');
+  const faults = {
+    vlan: (net, pc) => { const l = net.links.find((x) => x.from === pc.id || x.to === pc.id); const s = l.from === pc.id ? l.to : l.from, pt = l.from === pc.id ? l.toPort : l.fromPort, i = net.devices[s].ifaces[pt]; if (i) { i.vlan = 999; i.accessVlan = 999; } },
+    prune: (net) => Object.values(net.devices).forEach((d) => Object.values(d.ifaces || {}).forEach((i) => { if (i.mode === 'trunk' && Array.isArray(i.allowed)) i.allowed = i.allowed.filter((v) => v !== 10); })),
+    routes: (net) => Object.values(net.devices).forEach((d) => { if (d.routes) d.routes = []; }),
+    gwTrunk: (net, pc) => { const g = Object.values(net.devices).flatMap((d) => Object.values(d.ifaces || {})).find((i) => i.ip === pc.ifaces.eth0.gw); g && (g.admin = 'down'); const sw = Object.values(net.devices).filter((d) => d.type === 'switch' || d.type === 'l3switch').map((d) => d.id), l = net.links.find((x) => sw.includes(x.from) && sw.includes(x.to)); l && (net.devices[l.from].ifaces[l.fromPort].admin = 'down'); },
+  };
+  for (const L of T.LEVELS) for (const v of ['cisco', 'dell']) for (const combo of [['vlan'], ['prune'], ['routes'], ['gwTrunk'], ['vlan', 'routes'], ['prune', 'gwTrunk']]) {
+    const net = lab(L.id, v), pc = net.devices['pc-a']; if (!pc) continue; combo.forEach((f) => faults[f](net, pc));
+    n += agree(net, 'lab ' + L.id + ' ' + v + ' ' + combo.join('+'), (h, ip) => canPing(net, h.id, ip) || canPing(net, h.id, ip, { ignoreDup: true }));
+  }
+  ok(n >= 2000, 'checked ' + n + ' pairs');
+});
+
 done();

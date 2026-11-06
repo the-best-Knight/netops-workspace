@@ -284,4 +284,25 @@ test('interface range works on both vendors with ports that exist; a port the de
   l3('cisco'); ok(!SYNTAX.test(run('interface range gi0/1 - 2')) && /config-if-range/.test(run('description x')), 'cisco'); run('exit'); ok(SYNTAX.test(run('interface range gi0/1 - 9')), 'cisco missing port');
   l3('dell'); ok(!SYNTAX.test(run('interface range ethernet 1/1/1-1/1/2')) && /conf-range-eth1\/1\/1-1\/1\/2/.test(run('description x')), 'dell range'); run('exit'); ok(SYNTAX.test(run('interface range ethernet 1/1/1-1/1/9')), 'dell missing port');
 });
+console.log('F-08 and F-09: real commands the lab does not simulate are recognised, not rejected, and change nothing');
+const INVALID = /Invalid input/;
+test('F-08 Cisco DHCP snooping, global and on a port, is recognised with a note and changes nothing', () => {
+  const { net } = lab(9, 'cisco'); on('l3sw'); conf('cisco'); const before = JSON.stringify(net.devices);
+  for (const c of ['ip dhcp snooping', 'ip dhcp snooping vlan 10,20']) { const o = run(c); ok(!INVALID.test(o) && /DHCP snooping is not simulated/.test(o), c + ': ' + o); }
+  run('interface Gi0/1'); for (const c of ['ip dhcp snooping trust', 'no ip dhcp snooping trust']) { const o = run(c); ok(!INVALID.test(o) && /not simulated/.test(o), c + ': ' + o); }
+  ok(INVALID.test(run('ip dhcp snooping trusted')), 'a misspelling is still invalid'); eq(JSON.stringify(net.devices), before);
+});
+test('F-08 Dell OS10 interface mtu 1312 to 9216 is recognised with a note; out of range stays invalid; nothing changes', () => {
+  const { net } = lab(9, 'dell'); on('l3sw'); conf('dell'); run('interface ethernet1/1/1'); const before = JSON.stringify(net.devices);
+  for (const c of ['mtu 9216', 'mtu 1312', 'no mtu']) { const o = run(c); ok(!INVALID.test(o) && /Interface MTU is not simulated/.test(o), c + ': ' + o); }
+  for (const c of ['mtu 99999', 'mtu 1000', 'mtu']) ok(INVALID.test(run(c)), c + ' stays invalid');
+  eq(JSON.stringify(net.devices), before);
+});
+test('F-09 spanning-tree mode mst is recognised with a note and the switch keeps per-VLAN spanning tree, so the summary stays consistent', () => {
+  const { net } = lab(5, 'cisco'); on('sw1'); conf('cisco'); const o = run('spanning-tree mode mst');
+  ok(/MST is not simulated/.test(o) && !INVALID.test(o), o); ok((net.devices.sw1.stpMode || 'pvst') !== 'mst', 'mode unchanged'); run('end');
+  const sum = run('show spanning-tree summary'); ok(!/mst mode/.test(sum) && /Switch is in (pvst|rapid-pvst) mode/.test(sum), sum.split('\n').slice(0, 3).join(' | '));
+  conf('cisco'); run('spanning-tree mode rapid-pvst'); run('end'); ok(/rapid-pvst mode/.test(run('show spanning-tree summary')), 'other modes still work');
+});
+
 done();

@@ -37758,6 +37758,14 @@ function runConsoleCommandCore(raw, orig) {
     return;
   }
   if (cliGate(parts, orig, d)) return;
+  // F-08: real commands this lab does not simulate are recognised with a note, instead of answering "invalid input"
+  if (isSw(d) && confMode && !confAcl) {
+    var nsj = (parts[0] === "no" ? parts.slice(1) : parts).join(" "), nsim = vendor !== "dell" && (confIface ? nsj === "ip dhcp snooping trust" : /^ip dhcp snooping( vlan [\d,-]+)?$/.test(nsj)) ? "DHCP snooping is" : vendor === "dell" && confIface && (/^mtu$/.test(nsj) && parts[0] === "no" || /^mtu (\d+)$/.test(nsj) && +nsj.slice(4) >= 1312 && +nsj.slice(4) <= 9216) ? "Interface MTU is" : "";
+    if (nsim) {
+      consolePrint("% Lab note: " + nsim + " not simulated in this lab. The command was recognised, but nothing was configured.", "warn");
+      return;
+    }
+  }
   if (confAcl && d && d.acls && d.acls[confAcl] && (primary === "permit" || primary === "deny" || primary === "seq" || /^\d+$/.test(primary) || primary === "no" && /^\d+$/.test(parts[1] || ""))) {
     const acl = d.acls[confAcl];
     if (primary === "no") {
@@ -38626,6 +38634,11 @@ function runConsoleCommandCore(raw, orig) {
   if (primary === "spanning-tree" && parts[1] === "mode" && parts[2]) {
     if (!d) {
       consolePrint("% Select a device first", "err");
+      return;
+    }
+    // F-09: the lab computes spanning tree per VLAN and has no MST instances, so MST is recognised but not switched on
+    if (parts[2] === "mst") {
+      consolePrint("% Lab note: MST is not simulated in this lab. The command was recognised, but the switch keeps running " + (d.stpMode || "pvst") + " (one spanning tree per VLAN).", "warn");
       return;
     }
     d.stpMode = parts[2], markChanged(), consolePrint("spanning-tree mode " + parts[2], "ok");
