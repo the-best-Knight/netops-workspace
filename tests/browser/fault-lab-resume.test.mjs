@@ -1,7 +1,8 @@
 // Switch Lab: an unfinished lesson survives a reload of the same tab and is offered back on the lab list. A resumed lesson
 // is not finished until its test passes; Reset and Discard throw the copy away; damaged or altered copies are ignored;
 // console text is never kept.
-import { session } from './lib.mjs';
+import { session, KIT } from './lib.mjs';
+import { send, goto, evalIn } from './bidi.mjs';
 const S = await session();
 const KEY = 'nfl_resume_v1';
 const open = async () => { await S.load('#fault-lab', 2500); await S.frame(`w.confirm = () => true; return 1;`); };
@@ -53,4 +54,23 @@ await lesson1();
 await S.frame(`w.runConsoleCommand('select SW1'); w.runConsoleCommand('configure terminal'); w.runConsoleCommand('interface ethernet1/1/1'); w.runConsoleCommand('description lab-note'); w.runConsoleCommand('end'); return 1;`);
 const warn = await S.frame(`return w.__kitUnsaved();`);
 S.ok('leaving still asks first, and says the lesson can be resumed from this tab', /Leave this lesson\? It is not finished/.test(warn) && /resume/.test(warn) && /tab/.test(warn), warn);
+// switching vendor mid-lesson keeps the network, so the kept copy follows the new vendor
+await S.frame(`d.querySelector('#vendorToggle .vendor-btn[data-vendor="cisco"]').click(); await new Promise(r => setTimeout(r, 200)); return 1;`);
+S.ok('switching vendor mid-lesson updates the kept copy', JSON.parse(await S.frame(`return w.sessionStorage.getItem('${KEY}');`)).vendor === 'cisco', 0);
+await S.frame(`d.querySelector('#vendorToggle .vendor-btn[data-vendor="dell"]').click(); return 1;`);
+// a copy saved before the lesson changed in an update is not used
+const stale = JSON.parse(await S.frame(`return w.sessionStorage.getItem('${KEY}');`)); stale.base = '0';
+await S.frame(`w.sessionStorage.setItem('${KEY}', ${JSON.stringify(JSON.stringify(stale))}); return 1;`); await open(); b = await bar();
+S.ok('a copy from an older version of the lesson (fingerprint differs) is ignored and removed', !b.shown && !b.stored, b);
+// tabs: another tab has its own copy, and a tab opened later starts clean
+await lesson1();
+await S.frame(`w.runConsoleCommand('select SW1'); w.runConsoleCommand('configure terminal'); w.runConsoleCommand('interface ethernet1/1/1'); w.runConsoleCommand('no shutdown'); w.runConsoleCommand('end'); return 1;`);
+const tab2 = (await send('browsingContext.create', { type: 'tab' })).context;
+await goto(tab2, KIT + '#fault-lab'); await S.wait(2500);
+const t2 = JSON.parse(await evalIn(tab2, `(() => { const f = document.querySelector('iframe'), d = f.contentDocument, w = f.contentWindow, b = d.getElementById('resumeBar'); return JSON.stringify({ shown: !!b && !b.hidden, stored: w.sessionStorage.getItem('${KEY}') }); })()`));
+S.ok('a newly opened tab has nothing to resume: the copy belongs to the tab that made it', !t2.shown && !t2.stored, t2);
+await evalIn(tab2, `(() => { const f = document.querySelector('iframe'), d = f.contentDocument, w = f.contentWindow; w.confirm = () => true; d.querySelector('#labGrid .lab-card.free').click(); return new Promise(r => setTimeout(() => { w.runConsoleCommand('select SW1'); w.runConsoleCommand('configure terminal'); w.runConsoleCommand('interface ethernet1/1/2'); w.runConsoleCommand('description tab-two'); w.runConsoleCommand('end'); r('1'); }, 800)); })()`);
+const mine = JSON.parse(await S.frame(`return w.sessionStorage.getItem('${KEY}');`));
+S.ok('work in the second tab does not replace the first tab\'s copy', mine.level === 1, mine.level);
+await send('browsingContext.close', { context: tab2 });
 S.finish();
