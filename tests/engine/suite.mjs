@@ -552,7 +552,7 @@ console.log('F-02 neighbour rows cut inside their last column (audit 2026-11-05)
 const LLDP_HEAD = 'Capability codes:\n    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\nDevice ID           Local Intf     Hold-time  Capability      Port ID\n';
 const lrow = (dev, loc, port) => dev.padEnd(20) + loc.padEnd(15) + '120        B,R             ' + port;
 const ciscoLldp = (host, rows, footer) => host + '#show lldp neighbors\n' + LLDP_HEAD + rows.map((r) => lrow(...r)).join('\n') + (footer ? '\n\nTotal entries displayed: ' + rows.length + '\n' : '');
-const one = (NM, text, at) => { const m = NM.newModel(); const secs = NM.parseInputs([{ name: 'paste.txt', text }]); NM.apply(m, secs, { at: at || T0 }); return { m, secs, v: NM.view(m, {}) }; };
+const one = (NM, text, at) => { const m = NM.newModel(); const secs = NM.parseInputs([{ name: 'paste.txt', text }]), rep = NM.apply(m, secs, { at: at || T0 }); return { m, secs, rep, v: NM.view(m, {}) }; };
 const ports = (r) => r.v.links.map((L) => r.m.devices[L.a.dev].name + ' ' + L.a.ifk + ' - ' + r.m.devices[L.b.dev].name + ' ' + L.b.ifk);
 test('F-02a Cisco LLDP: the cut last row keeps its neighbour, drops the cut port, warns with the row, and marks the table partial', () => {
   const NM = fresh(), r = one(NM, ciscoLldp('SW-A', [['SW-B', 'Gi1/0/1', 'Gi1/0/5'], ['SW-C', 'Gi1/0/2', 'Gi1/0']], false));
@@ -603,6 +603,111 @@ test('F-02j Dell: a last row with no chassis ID while the others have one drops 
 });
 test('F-02k Dell OS9 two-word ports with full MACs are unaffected', () => {
   const NM = fresh(), r = one(NM, fx('os9-lldp.txt')); ok(!r.secs[0].warnings.some((w) => /cut off|chassis/.test(w)), r.secs[0].warnings); ok(r.v.links.length >= 1, 'links read');
+});
+
+console.log('\nWorkplace v1.10 integration: device kind, prompts, Dell LLDP with ESXi (W-xx)');
+const kindOf = (NM, n, caps = '', plat = '') => NM.guessKind(caps, plat, n);
+test('W-01 host names: core, distribution and access parts are read, only whole parts count, and digits after a part are ignored', () => {
+  const NM = fresh();
+  eq(['CORE-01', 'core-sw-1', 'sw-core-02', 'cr1-bldg-a', 'DIST-01', 'ACC-SW-12', 'asw3', 'paris-sw1', 'vmh01', 'esxhost3', 'srv-switch-01', '[SITE_1]-lab-sw2'].map((n) => kindOf(NM, n)),
+    ['core', 'core', 'core', 'core', 'switch', 'switch', 'switch', 'switch', 'esxi', 'esxi', 'switch', 'switch']);
+  // "corey" is not "core", "paris" is not Palo Alto, "pa" alone is
+  eq(['corey-pc', 'PARKING-AP', 'pa-01', 'access point 3', 'SEP0011223344AA', 'Printer-3F'].map((n) => kindOf(NM, n)), ['endpoint', 'ap', 'firewall', 'ap', 'phone', 'endpoint']);
+});
+test('W-02 a name whose parts disagree says nothing: CORE-TEST-PC is not a core switch, fw-mgmt-pc is not a firewall', () => {
+  const NM = fresh();
+  eq(['CORE-TEST-PC', 'DIST-PRINTER', 'fw-mgmt-pc', 'AP-CORE-LAB', 'san-diego-rtr', 'core-ap-phone'].map((n) => kindOf(NM, n)), ['unknown', 'unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
+  eq(['00:50:56:aa:bb:cc', '10.0.0.1', '', 'SW'].map((n) => NM.nameKind(n)), ['', '', '', 'switch']);
+});
+test('W-03 evidence beats the name: platform first, then LLDP/CDP capabilities, and the name only fills a gap', () => {
+  const NM = fresh();
+  eq(kindOf(NM, 'CORE-01', 'E'), 'endpoint', 'a station named CORE-01 stays an end station');
+  eq(kindOf(NM, 'SW-PHONE-LAB', 'B T'), 'phone', 'phones report Bridge too');
+  eq(kindOf(NM, 'core-sw-9', 'B W'), 'ap', 'access points report Bridge too');
+  eq(kindOf(NM, 'core-01', '', 'PA-3220'), 'firewall', 'platform beats the name');
+  eq(kindOf(NM, 'esx01', 'S'), 'esxi', 'ESXi reports itself as a switch');
+  eq(kindOf(NM, 'fw-edge-1', 'R'), 'firewall', 'firewalls report Router');
+  eq(kindOf(NM, 'CORE-01', 'B'), 'core', 'the name refines a bridge to a core switch');
+  eq(kindOf(NM, 'CORE-TEST-PC', 'B'), 'switch', 'a disagreeing name does not refine');
+  eq(kindOf(NM, 'Server-01', 'E'), 'endpoint', 'a station named Server stays an end station');
+  eq(kindOf(NM, 'rtr-01', 'B R'), 'core', 'Router and Bridge without an ISR/ASR platform stay core, as before');
+});
+test('W-04 a configuration decides the kind; a name that points elsewhere never overrides it', () => {
+  const NM = fresh(), m = NM.newModel(), cfg = fx('sw-acc1.cfg').replace(/^hostname \S+/m, 'hostname LAB-PC-07');
+  NM.apply(m, NM.parseInputs([{ name: 'lab.cfg', text: cfg }]), { at: T0 });
+  const d = byName(m, 'LAB-PC-07'); ok(d, 'device'); eq(d.kind, 'switch'); ok(d.kindRank >= 2, 'configuration evidence kept: ' + d.kindRank + ' ' + d.kindWhy);
+});
+test('W-05 prompts: Log Sanitizer placeholders, a leading digit, dotted and Dell OS9/OS10 prompts are read; text that is not a prompt is not', () => {
+  const NM = fresh(), host = (t) => NM.splitSections(t + '\nline', 'f').map((x) => x.host);
+  eq(host('[SITE_1]-lab-sw2# show lldp neighbors'), ['[SITE_1]-lab-sw2']);
+  eq(host('<HOST_1>#show running-config'), ['<HOST_1>']);
+  eq(host('6509-core#show cdp neighbors'), ['6509-core']);
+  eq(host('sw1.lab.example#show version'), ['sw1.lab.example']);
+  eq(host('OS10# show lldp neighbors'), ['OS10']);
+  eq(host('leaf1(conf-if-eth1/1/1)#show running-configuration'), ['leaf1']);
+  eq(host('S4048(conf)#show lldp neighbors'), ['S4048']);
+  eq(host('[admin@esx01:~] esxcli network nic list'), ['esx01']);
+  eq(host('1>show x'), [''], 'digits only is not a host');
+  eq(host('Note: run this> show me'), [''], 'a sentence is not a prompt');
+  eq(host('[SITE 1]-sw2# show version'), [''], 'a bracket that is not a placeholder is not a host');
+});
+test('W-06 a paste with several devices splits on each prompt and keeps each device\'s lines', () => {
+  const NM = fresh(), secs = NM.splitSections('[SITE_1]-core-01#show version\nCisco IOS XE Software\n[SITE_1]-acc-02#show version\nCisco IOS XE Software\nOS10# show version\nDell EMC Networking OS10', 'f');
+  eq(secs.map((x) => x.host), ['[SITE_1]-core-01', '[SITE_1]-acc-02', 'OS10']); eq(secs.map((x) => x.line), [1, 3, 5]);
+});
+const dellOn = (host, rows, hdr = 'show lldp neighbors') => host + '# ' + hdr + '\nLoc PortID          Rem Host Name          Rem Port Id                    Rem Chassis Id\n---------------------------------------------------------------------------------------\n' + rows.map((x) => x.join('    ')).join('\n') + '\n';
+test('W-07 Dell: "Not Advertised" is not a host name; the port and the chassis MAC are kept', () => {
+  const NM = fresh(), r = one(NM, dellOn('LEAF-1', [['ethernet1/1/1', 'SPINE-1', 'ethernet1/1/49', '90:b1:1c:f4:a9:01'], ['ethernet1/1/3', 'Not Advertised', 'vmnic2', '00:50:56:aa:bb:03']]));
+  eq(r.rep.errors, [], 'merged without errors');
+  ok(!byName(r.m, 'Not') && !byName(r.m, 'Not Advertised'), 'no device called Not'); ok(ports(r).some((p) => /eth1\/1\/3 - 00:50:56:aa:bb:03 vmnic2|00:50:56:aa:bb:03 vmnic2 - LEAF-1 eth1\/1\/3/.test(p)), ports(r));
+  const stub = Object.values(r.m.devices).find((d) => d.macs.includes('00:50:56:aa:bb:03')); ok(stub && stub.stub, 'MAC-only neighbour is a stub'); eq(stub.kind, 'esxi', 'a vmnic port means ESXi');
+});
+test('W-08 Dell: a chassis "Not Advertised" in the last row is not mistaken for a cut row', () => {
+  const NM = fresh(), r = one(NM, dellOn('LEAF-1', [['ethernet1/1/1', 'SPINE-1', 'ethernet1/1/49', '90:b1:1c:f4:a9:01'], ['ethernet1/1/2', 'SW-C', 'ethernet1/1/7', 'Not Advertised']]));
+  ok(ports(r).some((p) => /SW-C eth1\/1\/7/.test(p)), ports(r)); ok(!r.secs[0].warnings.some((w) => /cut off|no chassis ID/.test(w)), r.secs[0].warnings);
+});
+test('W-09 Dell + ESXi: vmnic is the remote port whichever of the last two columns holds it; the MAC is never a port or a name', () => {
+  const NM = fresh(), r = one(NM, dellOn('LEAF-1', [['ethernet1/1/5', 'esx03.lab.example', 'vmnic0', '00:50:56:aa:bb:05'], ['ethernet1/1/4', 'esx02', '00:50:56:aa:bb:04', 'vmnic1'], ['ethernet1/1/6', 'hv-node-7', 'vmnic3', '00:50:56:aa:bb:06']]));
+  eq(r.rep.errors, [], 'merged without errors');
+  ok(ports(r).some((p) => /esx03.lab.example vmnic0/.test(p)), ports(r)); ok(ports(r).some((p) => /esx02 vmnic1/.test(p)), ports(r));
+  ok(!ports(r).some((p) => /00:50:56/.test(p)), 'no MAC in a port or name: ' + ports(r));
+  eq(['esx03.lab.example', 'esx02', 'hv-node-7'].map((n) => byName(r.m, n) && byName(r.m, n).kind), ['esxi', 'esxi', 'esxi']);
+  ok(byName(r.m, 'esx02').macs.includes('00:50:56:aa:bb:04'), 'chassis MAC recorded as a MAC');
+});
+test('W-10 Dell OS9 two-word local port with an ESXi neighbour', () => {
+  const NM = fresh(), r = one(NM, dellOn('S4048-A', [['Te 0/1', 'esx04', 'vmnic3', '00:50:56:aa:bb:08'], ['Te 0/2', 'esx04', 'vmnic2', '00:50:56:aa:bb:08']]));
+  eq(r.rep.errors, [], 'merged without errors');
+  eq(r.v.links.length, 2, ports(r)); ok(ports(r).every((p) => /esx04 vmnic[23]/.test(p) && /te0\/[12]/.test(p)), ports(r)); eq(r.secs[0].label, 'Dell OS9 show lldp neighbors');
+});
+test('W-11 Dell: a row with only MAC addresses keeps its one-sided neighbour as a stub named by the MAC, never as a host name', () => {
+  const NM = fresh(), r = one(NM, dellOn('LEAF-1', [['ethernet1/1/1', 'SPINE-1', 'ethernet1/1/49', '90:b1:1c:f4:a9:01'], ['ethernet1/1/9', '00:50:56:aa:bb:07', '00:50:56:aa:bb:06']]));
+  eq(r.rep.errors, [], 'merged without errors');
+  const stub = Object.values(r.m.devices).find((d) => d.macs.includes('00:50:56:aa:bb:06')); ok(stub, 'neighbour kept'); ok(stub.stub, 'stub'); eq(stub.name, '00:50:56:aa:bb:06');
+  const L = r.v.links.find((x) => r.m.devices[x.a.dev] === stub || r.m.devices[x.b.dev] === stub); ok(L, 'link kept'); ok(L.status !== 'confirmed', 'one-sided stays unconfirmed: ' + L.status);
+});
+test('W-12 Dell: a host name cut short with dots matches a known device only when one name starts with it', () => {
+  const NM = fresh(), m = NM.newModel();
+  NM.apply(m, NM.parseInputs([{ name: 'a.txt', text: dellOn('LEAF-1', [['ethernet1/1/1', 'esx-rack4-cluster-a-01', 'vmnic0', '00:50:56:aa:bb:11']]) }]), { at: T0 });
+  const before = Object.keys(m.devices).length, secs = NM.parseInputs([{ name: 'b.txt', text: dellOn('LEAF-2', [['ethernet1/1/1', 'esx-rack4-clu...', 'vmnic1', '00:50:56:aa:bb:12']]) }]);
+  const rep = NM.apply(m, secs, { at: T0 + H }); eq(rep.errors, [], 'merged without errors'); ok(/looks cut short/.test(secs[0].warnings.join(' ')), secs[0].warnings);
+  ok(ports({ m, v: NM.view(m, {}) }).some((p) => /LEAF-2 eth1\/1\/1 - esx-rack4-cluster-a-01 vmnic1|esx-rack4-cluster-a-01 vmnic1 - LEAF-2/.test(p)), 'the cut name joins the known device');
+  eq(Object.keys(m.devices).length, before + 1, 'only LEAF-2 is new'); ok(!Object.values(m.devices).some((d) => /clu$|\.\.\.$/.test(d.name)), 'no device under the cut name');
+  // two candidates: no guess
+  const m2 = NM.newModel();
+  NM.apply(m2, NM.parseInputs([{ name: 'a.txt', text: dellOn('LEAF-1', [['ethernet1/1/1', 'esx-rack4-cluster-a-01', 'vmnic0', '00:50:56:aa:bb:11'], ['ethernet1/1/2', 'esx-rack4-cluster-b-01', 'vmnic0', '00:50:56:aa:bb:21']]) }]), { at: T0 });
+  NM.apply(m2, NM.parseInputs([{ name: 'b.txt', text: dellOn('LEAF-2', [['ethernet1/1/1', 'esx-rack4-clu…', 'vmnic1', '00:50:56:aa:bb:12']]) }]), { at: T0 + H });
+  ok(byName(m2, 'esx-rack4-clu'), 'kept apart under the cut name when two devices could match');
+});
+test('W-13 importing the same Dell + ESXi paste twice changes nothing', () => {
+  const NM = fresh(), m = NM.newModel(), t = dellOn('LEAF-1', [['ethernet1/1/4', 'esx02', '00:50:56:aa:bb:04', 'vmnic1'], ['ethernet1/1/5', 'esx03', 'vmnic0', '00:50:56:aa:bb:05'], ['ethernet1/1/3', 'Not Advertised', 'vmnic2', '00:50:56:aa:bb:03']]);
+  NM.apply(m, NM.parseInputs([{ name: 'a.txt', text: t }]), { at: T0 }); const n = Object.keys(m.devices).length, l = NM.view(m, {}).links.length;
+  NM.apply(m, NM.parseInputs([{ name: 'a.txt', text: t }]), { at: T0 + H }); eq(Object.keys(m.devices).length, n); eq(NM.view(m, {}).links.length, l);
+});
+test('W-14 an ESXi host seen by both Dell leaves on its own vmnics is one device with one link per cable', () => {
+  const NM = fresh(), m = NM.newModel();
+  NM.apply(m, NM.parseInputs([{ name: 'a.txt', text: dellOn('LEAF-1', [['ethernet1/1/5', 'esx03', 'vmnic0', '00:50:56:aa:bb:05']]) + dellOn('LEAF-2', [['ethernet1/1/5', 'esx03', 'vmnic1', '00:50:56:aa:bb:05']]) }]), { at: T0 });
+  eq(Object.values(m.devices).filter((d) => d.name === 'esx03').length, 1); const v = NM.view(m, {}), r = { m, v };
+  eq(ports(r).filter((p) => /esx03/.test(p)).length, 2, ports(r)); ok(ports(r).some((p) => /LEAF-1.*esx03 vmnic0|esx03 vmnic0.*LEAF-1/.test(p)) && ports(r).some((p) => /LEAF-2.*esx03 vmnic1|esx03 vmnic1.*LEAF-2/.test(p)), ports(r));
 });
 console.log('\n' + pass + ' passed, ' + fail + ' failed' + (fail ? ': ' + failures.join('; ') : ''));
 process.exit(fail ? 1 : 0);

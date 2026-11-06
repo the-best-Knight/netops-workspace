@@ -17610,11 +17610,45 @@ dialog.nm-dlg {
       if (/\bidrac\b|^idrac|[-_.]idrac\b|\biDRAC\b/i.test(n + " " + p)) return "idrac";
       if (/\bilo\b|^ilo[-_a-z0-9]|\biLO\b/i.test(n + " " + p)) return "ilo";
       if (/\b(cimc|ipmi|bmc|opengear|console[- ]server|pdu)\b/i.test(p + " " + n) || /(^|[-_.])(oob|ipmi|bmc|cimc|pdu)([-_.0-9]|$)/i.test(n)) return "mgmt";
-      if (/\b(PA-\d|Palo Alto|PAN-OS)/i.test(p) || /(^|[-_])(pa|fw|firewall)[-_0-9a-z]*$/i.test(n) || /\b(ASA|Firepower|FPR|FortiGate|SRX)/i.test(p)) return "firewall";
-      if (/\b(esxi?|vmware|esx\d)\b/i.test(p + " " + n) || /^esx/i.test(n)) return "esxi";
-      var R = has("Router", "R"), S = has("Switch", "S") || has("Bridge", "B");
-      return R && S && !/\b(ISR|ASR|CSR)/i.test(p) ? "core" : R || /\b(ISR|ASR|CSR|RTR)/i.test(p) || /(^|[-_])(rtr|router)/i.test(n) ? "router" : S || /(^|[-_])(sw|switch)/i.test(n) || /\b(WS-C|C9\d{3}|N\d{4}|Catalyst|Nexus)/i.test(p) ? "switch" : has("WLAN", "W") ? "ap" : has("Telephone", "T") || has("Phone", "P") ? "phone" : has("Station", "E") ? "endpoint" : has("Host", "H") ? "server" : "unknown";
+      // Evidence comes first: the platform, then the LLDP/CDP capabilities. The name fills a gap, refines a switch to a core
+      // switch, or names a firewall or ESXi host that reports itself as a router or switch, as they do. A device that reports
+      // itself as a phone, access point or end station stays one whatever it is called.
+      if (/\b(PA-\d|Palo Alto|PAN-OS|ASA|Firepower|FPR|FortiGate|SRX)/i.test(p)) return "firewall";
+      if (/\b(esxi?|vmware|esx\d)\b/i.test(p)) return "esxi";
+      var R = has("Router", "R"), S = has("Switch", "S") || has("Bridge", "B"), nk = nameKind(n);
+      // phones and access points also report Bridge
+      if (!R && (has("WLAN", "W") || has("Telephone", "T") || has("Phone", "P"))) return has("WLAN", "W") ? "ap" : "phone";
+      if ((R || S) && (nk === "firewall" || nk === "esxi")) return nk;
+      if (R && S && !/\b(ISR|ASR|CSR)/i.test(p)) return "core";
+      if (R || /\b(ISR|ASR|CSR|RTR)/i.test(p)) return "router";
+      if (S || /\b(WS-C|C9\d{3}|N\d{4}|Catalyst|Nexus)/i.test(p)) return nk === "core" ? "core" : "switch";
+      if (has("Station", "E")) return "endpoint";
+      if (has("Host", "H")) return nk === "esxi" ? "esxi" : "server";
+      return nk || "unknown";
     }
+    // What a host name suggests, from its parts: "core-sw-01" is core + sw. Only a whole part counts (digits at its end are
+    // ignored), so "paris-sw1" is not a Palo Alto and "corey-pc" is not a core switch. A name whose parts point different ways,
+    // like "core-test-pc", says nothing. Used only when nothing stronger is known: it is the weakest evidence.
+    var NAME_PART = { fw: "firewall", firewall: "firewall", pa: "firewall", asa: "firewall", fgt: "firewall", fortigate: "firewall", srx: "firewall", rtr: "router", router: "router", core: "core", cr: "core", sw: "switch", switch: "switch", asw: "switch", dsw: "switch", csw: "switch", acc: "switch", access: "switch", dist: "switch", agg: "switch", leaf: "switch", spine: "switch", esx: "esxi", esxi: "esxi", vmh: "esxi", srv: "server", svr: "server", server: "server", nas: "server", san: "server", storage: "server", stor: "server", ap: "ap", wap: "ap", phone: "phone", ipphone: "phone", pc: "endpoint", laptop: "endpoint", desktop: "endpoint", workstation: "endpoint", wks: "endpoint", printer: "endpoint", prn: "endpoint", cam: "endpoint", camera: "endpoint", badge: "endpoint", kiosk: "endpoint" };
+    function nameKind(name) {
+      var s = lc(name), got = /* @__PURE__ */ Object.create(null);
+      if (!s || RE_IP2.test(s) || isMac(s)) return "";
+      // a Cisco IP phone is named SEP and its MAC address
+      if (/^sep[0-9a-f]{12}$/.test(s)) return "phone";
+      /^esx/.test(s) && (got.esxi = 1), s.replace(/access[-_ ]?point/g, " ap ").split(/[^a-z0-9]+/).forEach(function(t) {
+        var k = NAME_PART[t] || NAME_PART[t.replace(/\d+$/, "")];
+        k && (got[k] = 1);
+      });
+      var ks = Object.keys(got);
+      if (ks.length < 2) return ks[0] || "";
+      if (got.ap || got.phone || got.endpoint) return "";
+      if (ks.length === 2 && got.core && got.switch) return "core";
+      // "srv-sw-01" is the switch for the servers
+      return got.switch && ks.every(function(k) {
+        return k === "switch" || k === "server" || k === "esxi";
+      }) ? "switch" : "";
+    }
+    NM2.nameKind = nameKind;
     NM2.guessKind = guessKind, NM2.newModel = function() {
       return { v: 1, seq: 0, rev: 0, devices: /* @__PURE__ */ Object.create(null), sources: [], imports: [], held: [], raw: /* @__PURE__ */ Object.create(null), manual: { dev: /* @__PURE__ */ Object.create(null), link: /* @__PURE__ */ Object.create(null), added: [], review: /* @__PURE__ */ Object.create(null) }, settings: { staleHours: 24 } };
     };
@@ -17696,7 +17730,10 @@ dialog.nm-dlg {
 `).replace(RE_ANSI, "");
       return t = t.replace(/[ \t]*-+[ \t]*More[ \t]*-+[ \t]*(?:\x08+[ \t]*\x08*|[ \t]*)/gi, "").replace(/^[ \t]*--More--[ \t]*$/gmi, "").replace(/\x08+/g, ""), t = t.replace(/^[ \t]*Press any key to continue.*$/gmi, "").replace(/^[ \t]*<--- More --->.*$/gmi, "").replace(/^[ \t]*\(Press.*Q to quit\).*$/gmi, ""), t;
     };
-    var CMDS = "(?:show|sh|display|esxcli|esxcfg-\\w+|vim-cmd|get|dir|more|cat|ip|ping|traceroute|tracert|lldpctl|lldpcli|ethtool|nmcli|networkctl|ifconfig|racadm)", RE_PROMPT = new RegExp("^\\s*(?:\\[[\\w.@-]+@([\\w.-]+)(?::[^\\]]*)?\\]\\s*[#$]?\\s+|(?:[\\w.-]+@)?([A-Za-z][\\w.-]*?)(?:\\((?:config[^)]*|active|passive|standby|non-functional|initial|[^)]{0,20})\\))?\\s*[#>]\\s*|[\\w.-]+@([\\w.-]+)(?::[^\\s$#]*)?\\s*[$#]\\s+|\\[[\\w.-]+@([\\w.-]+)\\s+[^\\]]*\\]\\s*[$#]\\s*)(" + CMDS + "(?:\\s.*|$))$", "i");
+    // A host name may hold a placeholder the Log Sanitizer put in ("[SITE_1]-lab-sw2#", "<HOST_1>#"), and may start with a digit
+    // ("6509-core#"). It must hold a letter somewhere, so "1>" is not a prompt.
+    var PH = "\\[[A-Za-z][A-Za-z0-9]*_\\d+\\]|<[A-Za-z][A-Za-z0-9]*_\\d+>";
+    var CMDS = "(?:show|sh|display|esxcli|esxcfg-\\w+|vim-cmd|get|dir|more|cat|ip|ping|traceroute|tracert|lldpctl|lldpcli|ethtool|nmcli|networkctl|ifconfig|racadm)", RE_PROMPT = new RegExp("^\\s*(?:\\[[\\w.@-]+@([\\w.-]+)(?::[^\\]]*)?\\]\\s*[#$]?\\s+|(?:[\\w.-]+@)?((?:\\w|" + PH + ")(?:[\\w.-]|" + PH + ")*?)(?:\\((?:config[^)]*|active|passive|standby|non-functional|initial|[^)]{0,20})\\))?\\s*[#>]\\s*|[\\w.-]+@([\\w.-]+)(?::[^\\s$#]*)?\\s*[$#]\\s+|\\[[\\w.-]+@([\\w.-]+)\\s+[^\\]]*\\]\\s*[$#]\\s*)(" + CMDS + "(?:\\s.*|$))$", "i");
     NM2.splitSections = function(text2, fileName) {
       var lines = NM2.clean(text2).split(`
 `), secs = [], cur = null;
@@ -17708,7 +17745,7 @@ dialog.nm-dlg {
       }
       lines.forEach(function(ln, i) {
         var m = RE_PROMPT.exec(ln);
-        if (m) {
+        if (m && /[A-Za-z]/.test(m[1] || m[2] || m[3] || m[4] || "")) {
           push(), cur = { cmd: tidy2(m[5]), host: tidy2(m[1] || m[2] || m[3] || m[4]), lines: [], line: i + 1, file: fileName || "" };
           return;
         }
@@ -18764,6 +18801,9 @@ dialog.nm-dlg {
           // OS9 and OS10 share this table header. Only the port names tell them apart: "Te 0/1" is OS9, "ethernet1/1/1" is OS10.
           toks.length >= 2 && /^[A-Za-z]{2,3}$/.test(toks[0]) && /^\d+(?:\/\d+)+$/.test(toks[1]) && (toks.splice(0, 2, toks[0] + toks[1]), os9Rows++);
           /^(?:ethernet|mgmt)\d+\/\d+\/\d+/i.test(toks[0]) && os10Rows++;
+          // "Not Advertised" is what the switch shows for a field the neighbour does not send: not a name, a port or a chassis
+          for (var na = 1; na < toks.length - 1; na++) /^not$/i.test(toks[na]) && /^advertised$/i.test(toks[na + 1]) && toks.splice(na, 2, "-");
+          var noChassis = toks.length >= 4 && toks[toks.length - 1] === "-" && !!toks.pop();
           toks.length < 3 && /^[A-Za-z]/.test(toks[0]) && f.warnings.push("Row not understood: " + tidy2(l).slice(0, 60));
           // the last column is the chassis MAC; a paste cut inside it leaves part of one ("90:b1:1c:f4:a9"), never a port
           toks.length >= 4 && !U.isMac(toks[toks.length - 1]) && /^[0-9a-f]{2}(?:[:-][0-9a-f]{0,2}){1,4}[:-]?$|^[0-9a-f]{4}\.[0-9a-f]{0,4}\.?[0-9a-f]{0,3}$/i.test(toks[toks.length - 1]) && (cutMac = toks.pop());
@@ -18772,12 +18812,19 @@ dialog.nm-dlg {
             U.isMac(chassis) || (chassis = "", rest = toks.slice(1)), rest.length >= 2 ? (host = rest[0], port = rest.slice(1).join(" ")) : rest.length === 1 && (port = rest[0]), /^\(null\)$|^-$/i.test(host) && (host = "");
             // No host name, just a two-word port ("Te 1/2"): the first word is part of the port, not a host.
             rest.length === 2 && /^[A-Za-z][A-Za-z-]*$/.test(rest[0]) && /^\d+(?:\/\d+)+$/.test(rest[1]) && (host = "", port = rest.join(" "));
+            // An ESXi host sends its NIC name ("vmnic2"). Whichever of the last two columns holds it, it is the remote port, and the
+            // MAC address next to it is the chassis, never a port or a name.
+            toks.length >= 3 && /^vmnic\d+$/i.test(toks[toks.length - 1]) && U.isMac(toks[toks.length - 2]) && (chassis = toks[toks.length - 2], port = toks[toks.length - 1], host = toks.length >= 4 ? toks[1] : "", /^\(null\)$|^-$/i.test(host) && (host = ""));
+            port === "-" && (port = "");
+            // a name the switch cut short to fit its column ("esx01-rack4-clu...") is kept without the dots and flagged
+            var nameCut = /(?:\.{2,}|\u2026)$/.test(host);
+            nameCut && (host = host.replace(/(?:\.{2,}|\u2026)$/, ""), f.warnings.push('The neighbour name "' + host + '..." on ' + local + " looks cut short by the switch. It is matched to a known device only when exactly one device name starts with it."));
             var i = P.iface(f, local);
             chassis && macRows++, cutMac && (f.warnings.push('The chassis ID looks cut off and was not used: "' + cutMac + '" in ' + tidy2(l).slice(0, 70) + "."), f.partial = true);
-            i && (i.nbrs.push({ proto: "lldp", name: host || chassis, chassis, rport: port, noName: !host, caps: [], portIdOnly: true }), last = i.nbrs[i.nbrs.length - 1], last.chassisCut = !!cutMac, lastRow = tidy2(l));
+            i && (i.nbrs.push({ proto: "lldp", name: host || chassis, chassis, rport: port, noName: !host, caps: [], portIdOnly: true }), last = i.nbrs[i.nbrs.length - 1], last.chassisCut = !!cutMac, nameCut && (last.nameCut = true), lastRow = tidy2(l), last.noChassis = noChassis);
           }
         }
-      }), last && lastRow === endRow && !last.chassis && !last.chassisCut && macRows && last.rport && (f.warnings.push('The last row has no chassis ID while the others do, so it may be cut off: ' + lastRow.slice(0, 70) + '. Its remote port "' + last.rport + '" is not used; the neighbour is kept with an unknown port.'), last.rportCut = last.rport, last.rport = "", f.partial = true), f.device.vendor = "Dell", f.label = os9Rows && !os10Rows ? "Dell OS9 show lldp neighbors" : os10Rows && !os9Rows ? "Dell OS10 show lldp neighbors" : "Dell show lldp neighbors (OS9 or OS10 not identified)", P.finish(f);
+      }), last && lastRow === endRow && !last.chassis && !last.chassisCut && !last.noChassis && macRows && last.rport && (f.warnings.push('The last row has no chassis ID while the others do, so it may be cut off: ' + lastRow.slice(0, 70) + '. Its remote port "' + last.rport + '" is not used; the neighbour is kept with an unknown port.'), last.rportCut = last.rport, last.rport = "", f.partial = true), f.device.vendor = "Dell", f.label = os9Rows && !os10Rows ? "Dell OS9 show lldp neighbors" : os10Rows && !os9Rows ? "Dell OS10 show lldp neighbors" : "Dell show lldp neighbors (OS9 or OS10 not identified)", P.finish(f);
     } }), NM2.register({ id: "dell.pc", vendor: "dell", cat: "pc", label: "Dell OS10 show port-channel summary", starts: [/^\s*Group\s+Port-Channel\s+Type\s+Protocol\s+Member Ports/i], score: function(t, cmd) {
       return /^\s*Group\s+Port-Channel\s+Type\s+Protocol\s+Member Ports/mi.test(t) ? cmdIs(cmd, /port-channel summary/) ? 0.97 : 0.93 : 0;
     }, parse: function(t) {
@@ -19569,6 +19616,16 @@ dialog.nm-dlg {
     }
     function resolveNbr(model, d, i, n, at, srcId, rep) {
       var macName = U.isMac(n.name) ? U.normMac(n.name) : "", chassisMac = n.chassis && U.isMac(n.chassis) ? U.normMac(n.chassis) : "", hint = { name: macName ? "" : n.name, ips: n.ip && usable(n.ip) ? [n.ip] : [], macs: [macName, chassisMac].filter(Boolean) };
+      // a name the switch cut short counts as a known device's name only when exactly one device's name starts with it
+      if (n.nameCut && hint.name && hint.name.length >= 3) {
+        var pre = String(hint.name).toLowerCase(), hits = Object.keys(model.devices).filter(function(id2) {
+          var x = model.devices[id2];
+          return [x.name].concat(x.aliases || []).some(function(a) {
+            return String(a).toLowerCase().indexOf(pre) === 0;
+          });
+        });
+        hits.length === 1 && (hint.name = model.devices[hits[0]].name);
+      }
       if (!(!hint.name && !hint.ips.length && !hint.macs.length)) {
         var id = NM2.identify(model, hint), nd;
         if (id.status === "match") {
@@ -19588,7 +19645,7 @@ dialog.nm-dlg {
         var k = NM2.guessKind((n.caps || []).map(function(c) {
           return { router: "R", switch: "S", bridge: "B", host: "H", station: "E", phone: "T", "wlan ap": "W" }[c] || "";
         }).join(" "), n.platform || "", n.name || "");
-        (/vmware/i.test(n.platform || "") || /\bvmnic|esx/i.test((n.rport || "") + " " + (n.name || ""))) && (k = /esx/i.test(n.name || n.platform) ? "esxi" : k), /idrac|integrated dell remote/i.test((n.name || "") + " " + (n.platform || "") + " " + (n.rdesc || "")) && (k = "idrac"), /\bilo\b|integrated lights/i.test((n.name || "") + " " + (n.platform || "") + " " + (n.rdesc || "")) && (k = "ilo"), setKind(nd, k, 1, "reported by neighbour discovery");
+        (/vmware/i.test(n.platform || "") || /\bvmnic|esx/i.test((n.rport || "") + " " + (n.name || ""))) && (k = /esx/i.test(n.name || n.platform) || /^vmnic\d+$/i.test(n.rport || "") ? "esxi" : k), /idrac|integrated dell remote/i.test((n.name || "") + " " + (n.platform || "") + " " + (n.rdesc || "")) && (k = "idrac"), /\bilo\b|integrated lights/i.test((n.name || "") + " " + (n.platform || "") + " " + (n.rdesc || "")) && (k = "ilo"), setKind(nd, k, 1, "reported by neighbour discovery");
       }
     }
     function mergeNbrs(model, d, fi, i, cat, at, srcId, rep, refreshed) {
