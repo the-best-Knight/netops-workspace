@@ -61,6 +61,7 @@ Needs Firefox. If it is not in a standard place, set `FIREFOX=/path/to/firefox`.
 | `branding` | The IK logo is at the top of the hub and every tool, and the banned words appear nowhere |
 | `fault-lab` | Dell is the default, `?` lists commands per mode in alphabetical order, `show interface` output for Cisco and Dell |
 | `fault-lab-free` | Free practice: a working network, no goal, no hints, never touches progress |
+| `fault-lab-resume` | An unfinished lesson kept for the same tab: offered after a reload, Resume brings the switch changes back without console text, a resumed lesson still needs its test, Reset and Discard remove the copy, damaged or altered copies are ignored, the leave warning still asks |
 | `fault-lab-windows-pc` | A PC console as a Windows Command Prompt with real key presses: prompt, header, history, focus, tracert, traceroute and switch commands not recognized, switches unchanged |
 | `fault-lab-tabs` | Two real tabs: lessons finished in each are all saved, an open tab updates when the other saves, the Cisco/Dell choice survives, damaged saved progress does not stop the lab |
 | `ping-analyzer` | ping, tracert, traceroute, mtr, WinMTR, pathping, Test-NetConnection, Test-Connection |

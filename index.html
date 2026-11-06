@@ -32626,6 +32626,25 @@ html {
   color: var(--kit-on-accent);
   background: var(--af-blue);
 }
+.resume-bar {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  color: var(--ink);
+  font-size: 13px;
+}
+.resume-bar[hidden] {
+  display: none;
+}
+.resume-acts {
+  display: flex;
+  gap: 8px;
+}
 .btn {
   background: transparent;
   border: 1px solid var(--line);
@@ -34130,6 +34149,7 @@ html:root #tabConsole .console-in-row input:focus-visible {
       <h2>Lab Catalog</h2>
       <p><b>Three paths, start anywhere.</b> Easy, Medium and Hard are independent: each begins at Ticket 1, and finishing a ticket unlocks the next one in the same path. Restore connectivity between the client and server. Every fix is made on a switch; PCs, servers and routers are view only. Progress is saved in this browser.</p>
       <p style="margin-top:10px"><button type="button" class="btn quiet" id="freeTop">Open free practice</button> No goal and nothing locked: a working network to try any command on.</p>
+      <div class="resume-bar" id="resumeBar" role="region" aria-label="Unfinished lesson" hidden><span id="resumeText"></span><span class="resume-acts"><button type="button" class="btn" id="resumeGo">Resume</button><button type="button" class="btn quiet" id="resumeDrop">Discard</button></span></div>
       <div class="hero-meta">
         <div class="hero-stat"><strong id="statCompleted">0</strong> Completed</div>
         <div class="hero-stat"><strong id="statTotal">0</strong> Labs</div>
@@ -35359,6 +35379,7 @@ function canRoute(net2, fromRouterId, targetIp, visited) {
   return false;
 }
 function renderLabManager() {
+  renderResume();
   const grid = $("labGrid");
   grid.innerHTML = "";
   let completed = 0;
@@ -35438,9 +35459,74 @@ function labUnsaved() {
   if (!currentLevel || !net || !changeCount) return "";
   if (currentLevel.extreme) return XS && XS.quizOk ? "" : "Leave this Extreme incident? Your changes are not saved, and the incident starts again next time.";
   if (currentLevel.free) return "Leave free practice? The changes you made are not saved.";
-  return $("problemBanner").classList.contains("solved") ? "" : "Leave this lesson? It is not finished, your changes are not saved, and it starts again next time.";
+  return $("problemBanner").classList.contains("solved") ? "" : "Leave this lesson? It is not finished. Your switch changes stay in this browser tab, and you can resume the lesson from the lab list until the tab is closed.";
 }
 window.__kitUnsaved = labUnsaved;
+// An unfinished lesson or free practice is kept for this browser tab only (sessionStorage, gone when the tab closes): the lab
+// network, its saved startup configuration and the change and hint counts, never the console text. It is offered back only
+// when its devices, names and cables match a fresh build of the same lesson; anything else is thrown away. A resumed lesson
+// is not finished until its test ping passes and its question is answered again. Extreme incidents are not kept.
+var RESUME_KEY = "nfl_resume_v1";
+function resumeShape(n) {
+  var dv = n && n.devices;
+  if (!dv || typeof dv !== "object" || Array.isArray(dv) || !Array.isArray(n.links)) return null;
+  try {
+    return JSON.stringify([Object.keys(dv).sort().map(function(k) {
+      var d = dv[k];
+      if (!d || typeof d !== "object" || !d.ifaces || typeof d.ifaces !== "object") throw 0;
+      return [k, d.id, d.name, d.type];
+    }), n.links.map(function(l) {
+      return [l.from, l.fromPort, l.to, l.toPort];
+    })]);
+  } catch (e) {
+    return null;
+  }
+}
+function resumeClear() {
+  try {
+    sessionStorage.removeItem(RESUME_KEY);
+  } catch (e) {
+  }
+}
+function resumeSave() {
+  if (!currentLevel || currentLevel.extreme || !net) return;
+  if (!changeCount) return resumeClear();
+  try {
+    sessionStorage.setItem(RESUME_KEY, JSON.stringify({ v: 1, level: currentLevel.id, vendor, net, startupCfg, changeCount, hintCount, hintStep, at: Date.now() }));
+  } catch (e) {
+  }
+}
+function resumeRead() {
+  var r = null;
+  try {
+    r = JSON.parse(sessionStorage.getItem(RESUME_KEY) || "null");
+  } catch (e) {
+    return resumeClear(), null;
+  }
+  if (!r) return null;
+  var lvl = r && r.v === 1 ? r.level === "free" ? FREE_LEVEL : LEVELS.find(function(l) {
+    return l.id === r.level;
+  }) : null, shape = lvl && resumeShape(r.net);
+  if (!lvl || !shape || shape !== resumeShape(autoLabel(lvl.build())) || r.vendor !== "cisco" && r.vendor !== "dell" || !(r.changeCount > 0) || r.startupCfg && typeof r.startupCfg !== "object") return resumeClear(), null;
+  return { r, lvl };
+}
+function renderResume() {
+  var bar = $("resumeBar"), x = bar ? resumeRead() : null;
+  if (!bar) return;
+  bar.hidden = !x;
+  x && ($("resumeText").textContent = "Unfinished in this tab: " + (x.lvl.free ? "Free practice" : pathLabel(x.lvl) + ", " + x.lvl.title) + " (" + (x.r.vendor === "dell" ? "Dell" : "Cisco") + ", " + x.r.changeCount + " change" + (x.r.changeCount === 1 ? "" : "s") + ").");
+}
+function resumeStart() {
+  var x = resumeRead();
+  if (!x) return renderResume();
+  if (x.r.vendor !== vendor) {
+    var vb = document.querySelector('#vendorToggle .vendor-btn[data-vendor="' + x.r.vendor + '"]');
+    vb && vb.click();
+  }
+  startLab(x.lvl.id), net = autoLabel(x.r.net), startupCfg = x.r.startupCfg || {}, changeCount = x.r.changeCount, hintCount = Math.max(0, +x.r.hintCount || 0), hintStep = Math.max(0, +x.r.hintStep || 0);
+  updateStatusbar(), renderTopology(), renderDevicePanel(), renderAddressing(), renderHealth(), autoCheck();
+  consolePrint("Resumed where you left off: your switch changes are back. The console starts empty. To finish, run the test again.", "ok"), resumeSave();
+}
 function exitLabAsk() {
   var why = labUnsaved();
   (!why || confirm(why)) && exitLab();
@@ -35684,7 +35770,7 @@ function consolePromptPrefix() {
   return name + (privOn() ? "#" : ">");
 }
 function markChanged() {
-  changeCount++, updateStatusbar(), renderTopology(), renderDevicePanel(), renderHealth(), autoCheck();
+  changeCount++, updateStatusbar(), renderTopology(), renderDevicePanel(), renderHealth(), autoCheck(), resumeSave();
 }
 var autoMet = false, autoTimer = null;
 function autoReset() {
@@ -36198,7 +36284,7 @@ function cliAppend(sess, ans) {
   }
 }
 function saveStartup(d) {
-  startupCfg[d.id] = cleanDev(d);
+  startupCfg[d.id] = cleanDev(d), resumeSave();
   if (vendor !== "dell") {
     consolePrint("Building configuration...", "");
     consolePrint("[OK]", "");
@@ -37628,6 +37714,11 @@ function runConsoleCommandCore(raw, orig) {
       consolePrint("'traceroute' is not recognized as an internal or external command,\noperable program or batch file.", "err"), consolePrint("Lab note: on Windows the command is tracert, for example tracert " + (wr[0] || "192.168.10.1") + ".", "warn");
       return;
     }
+  }
+  // PowerShell is not simulated: a network change through it is refused like any other, anything else says so
+  if (winHost(d) && /^(powershell|pwsh)(\.exe)?$/.test(primary)) {
+    /\b(set|new|remove|rename|enable|disable|restart)-net\w*|\bset-dnsclient\w*|\brename-computer\b/i.test(cmd) ? consolePrint(d.name + " is read-only in this lab. Its address, mask, gateway, DNS and routes come from the scenario and cannot be changed from the PC. Find the cause on the switches or the router and fix it there.", "err") : consolePrint("Lab note: PowerShell is not simulated on " + d.name + ". This console is the Command Prompt: ipconfig, route print, ping, tracert and nslookup.", "warn");
+    return;
   }
   // a Windows PC or server answers only Windows commands; switch and router commands are not recognized, as in cmd.exe
   if (winHost(d) && !/^(ping|tracert|nslookup|exit)$/.test(primary)) {
@@ -39414,7 +39505,7 @@ function showQuiz() {
 }
 function finishLevel() {
   if (!currentLevel || currentLevel.free || !goalMetNow()) return;
-  progress[currentLevel.id] = { completed: true, changes: changeCount, hints: hintCount, rev: currentLevel.rev || 1 }, saveProgress(), updateOverall(), $("problemBanner").classList.add("solved"), $("successMsg").textContent = lv("issue").replace("cannot", "can now") + ".", $("successTeach").textContent = lv("teach"), $("successModal").classList.add("show"), showToast("Lesson completed!", "success"), finishNext();
+  resumeClear(), progress[currentLevel.id] = { completed: true, changes: changeCount, hints: hintCount, rev: currentLevel.rev || 1 }, saveProgress(), updateOverall(), $("problemBanner").classList.add("solved"), $("successMsg").textContent = lv("issue").replace("cannot", "can now") + ".", $("successTeach").textContent = lv("teach"), $("successModal").classList.add("show"), showToast("Lesson completed!", "success"), finishNext();
 }
 function finishNext() {
   autoMet = true, clearTimeout(autoTimer), $("problemBanner").classList.remove("met");
@@ -39594,12 +39685,16 @@ function giveHintOld() {
   inp && inp.focus();
 }
 function resetLab() {
-  currentLevel && confirm(currentLevel.free ? "Reset free practice to its original working state?" : "Reset this lab to its initial (broken) state?") && (net = autoLabel(currentLevel.build()), resetLabState(), updateStatusbar(), renderTopology(), renderDevicePanel(), renderHealth(), clearConsole(), updateConsoleContext(), consolePrint("Lab reset to initial state.", "cmd"), showToast("Lab reset", "success"));
+  currentLevel && confirm(currentLevel.free ? "Reset free practice to its original working state?" : "Reset this lab to its initial (broken) state?") && (net = autoLabel(currentLevel.build()), resetLabState(), currentLevel.extreme || resumeClear(), updateStatusbar(), renderTopology(), renderDevicePanel(), renderHealth(), clearConsole(), updateConsoleContext(), consolePrint("Lab reset to initial state.", "cmd"), showToast("Lab reset", "success"));
 }
 document.querySelectorAll("#vendorToggle .vendor-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     vendor = btn.dataset.vendor, document.querySelectorAll("#vendorToggle .vendor-btn").forEach((b) => b.classList.toggle("active", b === btn)), lessonTok++, $("quizModal").classList.remove("show"), saveVendor(), updateStatusbar(), $("statVendor").textContent = vendor === "cisco" ? "Cisco" : "Dell", net && (renderTopology(), renderDevicePanel(), renderBrief()), showToast("Vendor set to " + (vendor === "cisco" ? "Cisco" : "Dell"), "success");
   });
+}), $("resumeGo").addEventListener("click", resumeStart), $("resumeDrop").addEventListener("click", function() {
+  resumeClear(), renderResume();
+  var f = $("freeTop");
+  f && f.focus();
 }), $("btnBackToManager").addEventListener("click", exitLabAsk), $("btnHint").addEventListener("click", giveHint), $("btnResetLab").addEventListener("click", resetLab), $("btnCheckGoal").addEventListener("click", checkGoal), $("btnSuccessStay").addEventListener("click", function() {
   $("successModal").classList.remove("show");
   var i = $("consoleInput");

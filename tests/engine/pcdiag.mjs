@@ -298,4 +298,15 @@ test('W2-11 two PCs on different networks each reach their own gateway at TTL 25
   }
 });
 
+test('W2-12 PC addressing stays read-only through cmd, PowerShell, route and DHCP commands, guided and Extreme, and nothing changes', () => {
+  const tries = ['netsh interface ipv4 set dnsservers Ethernet0 static 9.9.9.9', 'netsh int ip set address Ethernet0 dhcp', 'route change 0.0.0.0 mask 0.0.0.0 10.9.9.1', 'route delete 0.0.0.0', 'route -f', 'ipconfig /renew', 'ipconfig /release',
+    'Set-NetIPAddress -InterfaceAlias Ethernet0 -IPAddress 10.9.9.9', 'Set-NetIPInterface -InterfaceAlias Ethernet0 -Dhcp Enabled', 'Remove-NetRoute -DestinationPrefix 0.0.0.0/0',
+    'powershell -Command "Set-NetIPAddress -InterfaceAlias Ethernet0 -IPAddress 10.9.9.9 -PrefixLength 24"', 'pwsh -c New-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop 10.9.9.1', 'powershell Set-DnsClientServerAddress -InterfaceAlias Ethernet0 -ServerAddresses 9.9.9.9'];
+  for (const mode of ['guided', 'extreme']) {
+    const net = mode === 'guided' ? lab(6) : xlab(T.XL[0]), pc = mode === 'guided' ? net.devices['pc-a'] : pcs(net)[0]; on(pc.id); const before = JSON.stringify(net.devices);
+    for (const c of tries) ok(/read-only in this lab/.test(run(c)), mode + ': ' + c);
+    eq(JSON.stringify(net.devices), before, mode + ': nothing changed'); ok(/PowerShell is not simulated/.test(run('powershell')), mode + ': plain PowerShell');
+  }
+});
+
 done();
