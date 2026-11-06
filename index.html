@@ -34993,9 +34993,16 @@ function buildTraceHops(net2, fromId, targetIp) {
   if (!srcIface) return null;
   var rsrc = src.type === "l3switch" || src.type === "router";
   if (!rsrc && inSameSubnet(srcIface.ip, srcIface.mask, targetIp)) return hops.push(targetIp), hops;
-  !rsrc && srcIface.gw && hops.push(srcIface.gw);
   let curId = null;
   const gwInfo = !rsrc && srcIface.gw ? findDeviceByIp(net2, srcIface.gw) : null;
+  // a router that owns the destination (the gateway's other interface) answers as the destination at its own hop: one hop, not two
+  const owns = function(dev) {
+    return Object.values(dev.ifaces || {}).some(function(i) {
+      return i.ip === targetIp;
+    });
+  };
+  if (gwInfo && owns(gwInfo.device)) return hops.push(targetIp), hops;
+  !rsrc && srcIface.gw && hops.push(srcIface.gw);
   rsrc ? curId = fromId : gwInfo && (curId = gwInfo.device.id);
   const seen = /* @__PURE__ */ new Set();
   for (var guard = 0; guard < 8 && curId && !seen.has(curId); guard++) {
@@ -35006,8 +35013,9 @@ function buildTraceHops(net2, fromId, targetIp) {
     if (!rc) break;
     if (rc.iface) return hops.push(targetIp), hops;
     var next = rc.nh;
-    hops.push(next);
     const ni = findDeviceByIp(net2, next);
+    if (ni && owns(ni.device)) return hops.push(targetIp), hops;
+    hops.push(next);
     curId = ni ? ni.device.id : null;
   }
   return hops.push(targetIp), hops;
@@ -35593,7 +35601,7 @@ function switchConsoleDevice(id) {
     const out = $("consoleOut");
     if (out && !out.dataset.motd) {
       const d = net && net.devices[id], nm = d ? d.name : id, typ = d ? d.type : "device";
-      d && d.type !== "switch" && d.type !== "l3switch" ? consolePrint(d.type === "pc" || d.type === "server" ? "View only: look with ipconfig, ipconfig /all, route print, ping, tracert or nslookup. A PC cannot be changed here. Fixes are made on the switches." : "View only: look with show, ping, traceroute or nslookup. Fixes are made on the switches.", "warn") : consolePrint("Type ? or help to list commands.", "sys"), out.dataset.motd = "1";
+      d && d.type !== "switch" && d.type !== "l3switch" ? consolePrint(d.type === "pc" || d.type === "server" ? "Windows Command Prompt, view only: look with ipconfig, ipconfig /all, route print, ping, tracert or nslookup. A PC cannot be changed here. Fixes are made on the switches." : "View only: look with show, ping, traceroute or nslookup. Fixes are made on the switches.", "warn") : consolePrint("Type ? or help to list commands.", "sys"), out.dataset.motd = "1";
     }
   } else {
     confMode = false, confIface = null, confAcl = null, $("consoleOut").innerHTML = "";
@@ -35642,12 +35650,18 @@ function updateConsoleContext() {
   if (selectedDeviceId && net && net.devices[selectedDeviceId]) {
     const d = net.devices[selectedDeviceId];
     let mode = "";
-    confAcl ? mode = " \xB7 config-ext-nacl " + confAcl : confIface ? mode = " \xB7 config-if " + ifName(confIface, vendor) : confMode && (mode = " \xB7 config"), !confMode && !privOn() && (mode = " \xB7 user EXEC"), ctx.textContent = d.name + mode, prompt.textContent = consolePromptPrefix();
+    confAcl ? mode = " \xB7 config-ext-nacl " + confAcl : confIface ? mode = " \xB7 config-if " + ifName(confIface, vendor) : confMode && (mode = " \xB7 config"), !confMode && !privOn() && (mode = " \xB7 user EXEC"), winHost(d) && (mode = " \xB7 Command Prompt"), ctx.textContent = d.name + mode, prompt.textContent = consolePromptPrefix();
   } else ctx.textContent = "No device selected. Click a device on the diagram or type: select " + labSw(), prompt.textContent = "Lab#";
+}
+// the prompt as echoed before a command: OS10 leaves a space after its prompt, Windows and IOS do not
+function promptEcho() {
+  return consolePromptPrefix() + (vendor === "dell" && isSw(curDev()) ? " " : "");
 }
 function consolePromptPrefix() {
   var d = curDev(), name = d ? d.name : "Lab";
   if (!d) return "Lab#";
+  // a Windows PC or server shows a Command Prompt; the header above the console names the device
+  if (winHost(d)) return "C:\\>";
   if (!isSw(d)) return name + "#";
   var dell = vendor === "dell";
   if (confAcl) return name + (dell ? "(conf-ext-nacl)#" : "(config-ext-nacl)#");
@@ -35733,7 +35747,7 @@ function resolveIfaceKey(d, name) {
   return null;
 }
 function printFullHelp() {
-  consolePrint("In this lab only switches can be changed. PCs, servers and routers are view only: show, ping, traceroute and nslookup work on them, and PCs and servers also answer ipconfig, route print and tracert.", "warn"), consolePrint("Vendor: " + (vendor === "dell" ? "Dell OS10-style (ethernet1/1/N)" : "Cisco IOS-style") + " | L1: show interfaces, show logging, clear counters, speed, duplex", "ok"), consolePrint("Modes (Cisco): SW1> is user mode, enable gives SW1#, configure terminal gives SW1(config)#. Config commands only work in config mode; use do show ... from there. Dell OS10 starts at SW1#. write memory saves, reload restarts and loses unsaved changes.", "ok"), consolePrint("Shortcuts: sh run, sh ip int br, sh vlan br, sh int status, conf t or config t, int g0/1 (Dell: int e1/1/1 or int eth 1/1/1), int vlan 10, sw mode trunk, sw acc vlan 10, no shut, shut, en, ex, wr, copy run start. Any word can be shortened as long as it is unique.", "ok"), consolePrint(`Switch Lab CLI: switch-focused Cisco IOS + Dell OS10 subset.
+  consolePrint("In this lab only switches can be changed. PCs, servers and routers are view only. Routers answer show, ping, traceroute and nslookup. PCs and servers are Windows: ipconfig, route print, ping, tracert and nslookup.", "warn"), consolePrint("Vendor: " + (vendor === "dell" ? "Dell OS10-style (ethernet1/1/N)" : "Cisco IOS-style") + " | L1: show interfaces, show logging, clear counters, speed, duplex", "ok"), consolePrint("Modes (Cisco): SW1> is user mode, enable gives SW1#, configure terminal gives SW1(config)#. Config commands only work in config mode; use do show ... from there. Dell OS10 starts at SW1#. write memory saves, reload restarts and loses unsaved changes.", "ok"), consolePrint("Shortcuts: sh run, sh ip int br, sh vlan br, sh int status, conf t or config t, int g0/1 (Dell: int e1/1/1 or int eth 1/1/1), int vlan 10, sw mode trunk, sw acc vlan 10, no shut, shut, en, ex, wr, copy run start. Any word can be shortened as long as it is unique.", "ok"), consolePrint(`Switch Lab CLI: switch-focused Cisco IOS + Dell OS10 subset.
 
 ATTACH / BASIC
   select <device>     ping <ip or name>     traceroute <ip or name>     nslookup <name>     ipconfig [/all]     route print     tracert <ip or name>     enable
@@ -36106,7 +36120,7 @@ function leaveConfig(d) {
   }
 }
 function cliInvalid(idx, orig) {
-  var pre = doPre || consolePromptPrefix() + (vendor === "dell" ? " " : ""), toks = [], re = /\S+/g, m;
+  var pre = doPre || promptEcho(), toks = [], re = /\S+/g, m;
   while (m = re.exec(orig)) toks.push(m);
   var off = toks[idx] ? toks[idx].index : orig.length;
   consolePrint(" ".repeat(pre.length + off) + "^", "err");
@@ -36509,7 +36523,7 @@ function runConsoleCommand(raw, ui) {
       if (res === null || !fm) {
         var el = lines.length && lines[0].cls === "cmd" ? [lines[0]] : [];
         lines = el;
-        var pre = consolePromptPrefix() + (vendor === "dell" ? " " : ""), idx = line.indexOf("|") + 1;
+        var pre = promptEcho(), idx = line.indexOf("|") + 1;
         while (line.charAt(idx) === " ") idx++;
         lines.push({ text: " ".repeat(pre.length + idx) + "^", cls: "err" }, { text: vendor === "dell" ? '% Error: Invalid input at "^" marker.' : "% Invalid input detected at '^' marker.", cls: "err" });
       } else lines = res;
@@ -36564,7 +36578,7 @@ function cliCtrl(e) {
   }
   if (k === "z" && confMode) {
     e.preventDefault();
-    consolePrint(consolePromptPrefix() + (vendor === "dell" ? " " : "") + el.value + "^Z", "cmd");
+    consolePrint(promptEcho() + el.value + "^Z", "cmd");
     el.value = "";
     noEcho = true;
     try {
@@ -36577,7 +36591,7 @@ function cliCtrl(e) {
   if (k === "c" && p === el.selectionEnd) {
     e.preventDefault();
     var s = selectedDeviceId ? ensureSession(selectedDeviceId) : null;
-    consolePrint(consolePromptPrefix() + (vendor === "dell" ? " " : "") + el.value + "^C", "cmd");
+    consolePrint(promptEcho() + el.value + "^C", "cmd");
     el.value = "";
     if (s) {
       s.pending = null;
@@ -37039,24 +37053,87 @@ function winRoutePrint(d) {
   } else L.push(row("127.0.0.0", "255.0.0.0", "On-link", "127.0.0.1", 331), row("127.0.0.1", "255.255.255.255", "On-link", "127.0.0.1", 331), row("127.255.255.255", "255.255.255.255", "On-link", "127.0.0.1", 331));
   return L.concat(bar, "Persistent Routes:", "  None");
 }
-// hopIps: addresses that answered, in order. ok: the destination answered.
-function winTrace(d, target, hopIps, ok, name) {
-  var a = winAdapter(d), L = ["", "Tracing route to " + (name ? name + " [" + target + "]" : target) + " over a maximum of 30 hops", ""], n = 0, ms = function(i) {
+// What a Windows host sees for one destination. ping and tracert both use it, so they always agree, and it reads the same
+// simulated state as the lesson checks: canPing in guided labs, the Extreme packet model (xPing) in Extreme Mode.
+// mode: ok; dup (two owners of the address answer by turns); host (ARP gets no answer, so the PC itself reports Destination
+// host unreachable); net (a Cisco router on the path has no route and answers Destination net unreachable); timeout;
+// fail (the PC cannot send at all: no link, no address, or no route on the PC).
+// hops: the addresses that answer a tracert, in order, the destination last when it answers. from: who reports host or net
+// unreachable. routers: how many routers forward the reply back (each takes one off the TTL).
+function winDiag(d, ip) {
+  var a = winAdapter(d), mine = a && a.i.ip, mask = a && (a.i.mask || "255.255.255.0"), gw = a && a.i.gw, o = { mode: "fail", hops: [], routers: 0, from: mine };
+  if (!a || !mine || !winLinkUp(d, a)) return o;
+  var local = inSameSubnet(mine, mask, ip);
+  if (!local && (!gw || !inSameSubnet(mine, mask, gw))) return o;
+  return currentLevel && currentLevel.extreme ? winDiagX(d, ip, mine, gw, local, o) : winDiagG(d, ip, mine, gw, local, o);
+}
+// Cisco IOS sends ICMP unreachables by default (ip unreachables). The Dell OS10 default was not confirmed, so on Dell a router
+// with no route stays silent and the PC sees time-outs.
+function winSendsUnreach(dev) {
+  return vendor !== "dell" && !!dev && (dev.type === "router" || dev.type === "l3switch");
+}
+function winDiagG(d, ip, mine, gw, local, o) {
+  if (canPing(net, d.id, ip)) {
+    var h = buildTraceHops(net, d.id, ip) || [ip];
+    return o.mode = "ok", o.hops = h, o.routers = Math.max(0, h.length - 1), o;
+  }
+  if (canPing(net, d.id, ip, { ignoreDup: true })) return o.mode = "dup", local && (o.hops = [ip]), o;
+  if (local || !canPing(net, d.id, gw)) return o.mode = "host", o;
+  // the gateway answers: follow the routers toward the destination while each one can still reach the PC with its answer
+  o.mode = "timeout";
+  for (var cur = findDeviceByIp(net, gw), inIp = gw, seen = {}, n = 0; cur && !seen[cur.device.id] && n < 8; n++) {
+    var r = cur.device;
+    if (seen[r.id] = 1, !canPing(net, d.id, inIp) || noTransit(r, ip)) break;
+    var rc = routeCandidates(net, r, ip)[0];
+    if (!rc) {
+      winSendsUnreach(r) && (o.mode = "net", o.from = inIp);
+      break;
+    }
+    if (o.hops.push(inIp), rc.iface) break;
+    var nx = findDeviceByIp(net, rc.nh);
+    if (!nx || !hasL2Path(net, r.id, rc.nh, ifaceVlanOf(rc.out))) break;
+    cur = nx, inIp = rc.nh;
+  }
+  return o;
+}
+function winDiagX(d, ip, mine, gw, local, o) {
+  var r = xPing(net, d.id, ip), f = r.fwd;
+  if (r.ok) {
+    // the device that owns the destination answers from that address, even when it is a router's other interface
+    var hs = f.hops.map(function(h) {
+      return h.ip;
+    });
+    return hs.length ? hs[hs.length - 1] = ip : hs.push(ip), o.mode = "ok", o.hops = hs, o.routers = Math.max(0, f.hops.length - 1), o;
+  }
+  if (local) return o.mode = f.ok || f.hops.length ? "timeout" : "host", o;
+  if (!xPing(net, d.id, gw).ok) return o.mode = "host", o;
+  o.mode = "timeout";
+  for (var k = 0; k < f.hops.length; k++) {
+    var h = f.hops[k], dev = net.devices[h.dev];
+    if (!xPath(net, h.dev, mine, "echo-reply", h.ip).ok) break;
+    if (!f.ok && f.stuckAt === h.dev && /has no route/.test(f.reason || "") && winSendsUnreach(dev)) {
+      o.mode = "net", o.from = h.ip;
+      break;
+    }
+    o.hops.push(h.ip);
+  }
+  return o;
+}
+function winTrace(d, target, g, name) {
+  if (g.mode === "fail") return ["Unable to contact IP driver. General failure."];
+  var L = ["", "Tracing route to " + (name ? name + " [" + target + "]" : target) + " over a maximum of 30 hops", ""], n = 0, ms = function(i) {
     return i ? String(i).padStart(6) + " ms" : "    <1 ms";
-  };
-  hopIps.forEach(function(h, i) {
-    n++, L.push(String(n).padStart(3) + ms(i === 0 ? 0 : i) + ms(i === 0 ? 0 : i) + ms(i === 0 ? 0 : i) + "  " + h);
+  }, ok = g.mode === "ok" || g.mode === "dup" && g.hops.length;
+  g.hops.forEach(function(h, i) {
+    n++, L.push(String(n).padStart(3) + ms(i) + (g.mode === "dup" ? "     *   " : ms(i)) + ms(i) + "  " + h);
   });
   if (!ok) {
-    if (!hopIps.length) {
-      var same = a && a.i.ip && inSameSubnet(a.i.ip, a.i.mask || "255.255.255.0", target);
-      L.push("  1  " + (a && a.i.ip || "0.0.0.0") + "  reports: Destination " + (same ? "host" : "net") + " unreachable.");
-    } else for (var k = 0; k < 3; k++) L.push(String(++n).padStart(3) + "     *        *        *     Request timed out.");
+    if (g.mode === "host" || g.mode === "net") L.push(String(n + 1).padStart(3) + "  " + g.from + "  reports: Destination " + g.mode + " unreachable.");
+    else for (var k = 0; k < 3; k++) L.push(String(++n).padStart(3) + "     *        *        *     Request timed out.");
   }
   return L.concat("", "Trace complete.");
 }
-// Windows ping from a lab PC. The outcome comes from the PC's own state: link, address, gateway, then the path. In Extreme
-// Mode the path is the Extreme packet model (xPing), the same one tracert and the incident checks use.
+// Windows ping from a lab PC. Destination host and net unreachable replies count as received, as Windows counts them.
 function winTtl(ip, routers) {
   var o = findDeviceByIp(net, ip), t = o && o.device, base = !t ? 64 : t.type === "pc" || t.type === "server" ? 128 : vendor === "dell" && isSw(t) ? 64 : 255;
   return Math.max(1, base - routers);
@@ -37082,22 +37159,17 @@ function winPingCmd(d, args, print) {
     if (!rr.ip) return print("Ping request could not find host " + tgt + ". Please check the name and try again.", "err");
     ip = rr.ip;
   }
-  var a = winAdapter(d), mine = a && a.i.ip, gw = a && a.i.gw, local = mine && inSameSubnet(mine, a.i.mask || "255.255.255.0", ip), mode, routers = 0;
-  if (!a || !mine || !winLinkUp(d, a)) mode = "fail";
-  else if (x) {
-    var r = xPing(net, d.id, ip);
-    r.ok ? (mode = "ok", routers = Math.max(0, r.fwd.hops.length - 1)) : mode = local ? r.fwd.ok || r.fwd.hops.length ? "timeout" : "host" : !gw ? "fail" : xPing(net, d.id, gw).ok ? "timeout" : "host";
-  } else {
-    var ok = canPing(net, d.id, ip), dup = !ok && canPing(net, d.id, ip, { ignoreDup: true }), hops = ok && buildTraceHops(net, d.id, ip), ap = aclPath(net, d.id, ip);
+  var g = winDiag(d, ip), mode = g.mode, routers = g.routers;
+  if (!x && mode !== "fail") {
+    var ap = aclPath(net, d.id, ip);
     ap && ap.evals.forEach(function(e) {
       e.res.rule && (e.res.rule.matches = (e.res.rule.matches || 0) + n);
     });
-    mode = ok ? "ok" : dup ? "dup" : local ? "host" : !gw || !inSameSubnet(mine, a.i.mask || "255.255.255.0", gw) ? "fail" : canPing(net, d.id, gw) ? "timeout" : "host", routers = hops ? Math.max(0, hops.length - 1) : 0;
   }
   var L = ["", "Pinging " + (named ? tgt + " [" + ip + "]" : ip) + " with " + size + " bytes of data:"], got = 0, rtt = 0;
   for (var k = 0; k < n; k++) {
     var reply = mode === "ok" || mode === "dup" && k % 2 === 0;
-    reply ? (got++, rtt++, L.push("Reply from " + ip + ": bytes=" + size + " time" + (routers ? "=1ms" : "<1ms") + " TTL=" + winTtl(ip, routers))) : mode === "host" ? (got++, L.push("Reply from " + mine + ": Destination host unreachable.")) : mode === "fail" ? L.push("PING: transmit failed. General failure.") : L.push("Request timed out.");
+    reply ? (got++, rtt++, L.push("Reply from " + ip + ": bytes=" + size + " time" + (routers ? "=1ms" : "<1ms") + " TTL=" + winTtl(ip, routers))) : mode === "host" || mode === "net" ? (got++, L.push("Reply from " + g.from + ": Destination " + mode + " unreachable.")) : mode === "fail" ? L.push("PING: transmit failed. General failure.") : L.push("Request timed out.");
   }
   L.push("", "Ping statistics for " + ip + ":", "    Packets: Sent = " + n + ", Received = " + got + ", Lost = " + (n - got) + " (" + Math.round(100 * (n - got) / n) + "% loss),");
   rtt && L.push("Approximate round trip times in milli-seconds:", "    Minimum = " + (routers ? 1 : 0) + "ms, Maximum = " + (routers ? 1 : 0) + "ms, Average = " + (routers ? 1 : 0) + "ms");
@@ -37477,7 +37549,7 @@ function runConsoleCommandCore(raw, orig) {
     consolePrint(consolePromptPrefix(), "cmd");
     return;
   }
-  if (noEcho || consolePrint(consolePromptPrefix() + (vendor === "dell" ? " " : "") + (orig || cmd), "cmd"), selectedDeviceId && (coachCur = { id: selectedDeviceId, cmd: cmd.toLowerCase(), t: ++coachClock, mode: coachModeNow().k, rejected: false }, coachLog.push(coachCur)), selectedDeviceId) {
+  if (noEcho || consolePrint(promptEcho() + (orig || cmd), "cmd"), selectedDeviceId && (coachCur = { id: selectedDeviceId, cmd: cmd.toLowerCase(), t: ++coachClock, mode: coachModeNow().k, rejected: false }, coachLog.push(coachCur)), selectedDeviceId) {
     const s = ensureSession(selectedDeviceId);
     !noEcho && (!s.history.length || s.history[s.history.length - 1] !== (orig || cmd)) && s.history.push(orig || cmd), s.history.length > 80 && (s.history = s.history.slice(-80)), s.histIdx = s.history.length;
   }
@@ -37506,7 +37578,7 @@ function runConsoleCommandCore(raw, orig) {
   if (winHost(d)) {
     const wp = cmd.trim().split(/\s+/), w0 = wp[0].toLowerCase().replace(/\/.*$/, ""), wr = wp.slice(1);
     if (winHostBlocked(wp[0].replace(/\/.*$/, ""), wp[0].indexOf("/") > 0 ? ["/" + wp[0].split("/")[1]] : wr)) {
-      consolePrint("% " + d.name + " is read-only in this lab. Its address, mask, gateway, DNS and routes come from the scenario and cannot be changed from the PC. Find the cause on the switches or the router and fix it there.", "err");
+      consolePrint(d.name + " is read-only in this lab. Its address, mask, gateway, DNS and routes come from the scenario and cannot be changed from the PC. Find the cause on the switches or the router and fix it there.", "err");
       return;
     }
     if (w0 === "ipconfig") {
@@ -37547,20 +37619,27 @@ function runConsoleCommandCore(raw, orig) {
         }
         tip = rr.ip;
       }
-      const hops = buildTraceHops(net, d.id, tip), ok = !!hops;
-      let hl = hops || [];
-      if (!ok) {
-        const ai = winAdapter(d);
-        ai && ai.i.gw && winLinkUp(d, ai) && canPing(net, d.id, ai.i.gw) && hl.push(ai.i.gw);
-      }
-      consolePrint(winTrace(d, tip, hl, ok, tip !== tgt ? tgt : "").join("\n"), ok ? "ok" : "err");
+      const g = winDiag(d, tip);
+      consolePrint(winTrace(d, tip, g, tip !== tgt ? tgt : "").join("\n"), g.mode === "ok" ? "ok" : "err");
       return;
     }
+    // Windows has no traceroute command
+    if (w0 === "traceroute") {
+      consolePrint("'traceroute' is not recognized as an internal or external command,\noperable program or batch file.", "err"), consolePrint("Lab note: on Windows the command is tracert, for example tracert " + (wr[0] || "192.168.10.1") + ".", "warn");
+      return;
+    }
+  }
+  // a Windows PC or server answers only Windows commands; switch and router commands are not recognized, as in cmd.exe
+  if (winHost(d) && !/^(ping|tracert|nslookup|exit)$/.test(primary)) {
+    coachRefused = d.name;
+    const sws = Object.values(net.devices).filter((x) => x.type === "switch" || x.type === "l3switch").map((x) => x.name);
+    consolePrint("'" + (orig || cmd).trim().split(/\s+/)[0] + "' is not recognized as an internal or external command,\noperable program or batch file.", "err"), consolePrint("Lab note: " + d.name + " is a Windows " + (d.type === "pc" ? "PC" : "server") + " and view only. Look with ipconfig, ipconfig /all, route print, ping, tracert or nslookup. Fixes are made on switches" + (sws.length ? ": " + sws.join(", ") + ". Try: select " + sws[0] : "") + ".", "warn");
+    return;
   }
   if (d && d.type !== "switch" && d.type !== "l3switch" && !/^(show|ping|traceroute|tracert|nslookup|enable|disable|end|exit|write|wr|copy|do)$/.test(primary)) {
     coachRefused = d.name;
     const sws = Object.values(net.devices).filter((x) => x.type === "switch" || x.type === "l3switch").map((x) => x.name), kind = d.type === "pc" ? "PC" : d.type === "server" ? "server" : d.type === "router" ? "router" : d.type;
-    consolePrint("% " + d.name + " is a " + kind + " and is view only in this lab. You can look at it (show, ping, traceroute, nslookup" + (d.type === "pc" || d.type === "server" ? ", ipconfig, route print, tracert" : "") + "). Fixes are made on switches" + (sws.length ? ": " + sws.join(", ") + ". Try: select " + sws[0] : "") + ".", "err");
+    consolePrint("% " + d.name + " is a " + kind + " and is view only in this lab. You can look at it (show, ping, traceroute, nslookup). Fixes are made on switches" + (sws.length ? ": " + sws.join(", ") + ". Try: select " + sws[0] : "") + ".", "err");
     return;
   }
   if (cliGate(parts, orig, d)) return;
@@ -38100,7 +38179,7 @@ function runConsoleCommandCore(raw, orig) {
   }
   if (primary === "do" && parts.length > 1) {
     const prevConf = confMode, prevIf = confIface;
-    doPre = consolePromptPrefix() + (vendor === "dell" ? " " : "") + "do ";
+    doPre = promptEcho() + "do ";
     confMode = false, confIface = null, noEcho = true, runConsoleCommand(raw.trim().replace(/^do\s+/i, "")), noEcho = false, doPre = "", confMode = prevConf, confIface = prevIf, updateConsoleContext();
     return;
   }
@@ -42157,12 +42236,13 @@ function xCmd(raw) {
       }
       wname = wt[1], tip = wr2.ip;
     }
-    var wp = xPath(net, d.id, tip, "echo");
-    winTrace(d, tip, wp.hops.map(function(h) {
-      return h.ip;
-    }), wp.ok, wname).forEach(function(l) {
+    winTrace(d, tip, winDiag(d, tip), wname).forEach(function(l) {
       xPrint(l, "");
     });
+    return true;
+  }
+  if (d && winHost(d) && !confMode && /^traceroute(\s|$)/.test(low)) {
+    xPrint("'traceroute' is not recognized as an internal or external command,", "err"), xPrint("operable program or batch file.", "err"), xPrint("Lab note: on Windows the command is tracert.", "warn");
     return true;
   }
   var tr = /^(traceroute|tracert)\s+(\d+\.\d+\.\d+\.\d+)$/.exec(low);

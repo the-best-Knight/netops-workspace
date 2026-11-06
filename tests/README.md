@@ -39,6 +39,7 @@ These run the other tools' own code, taken from `index.html` with no browser: `t
 | `os9cheat` | Dell OS9 cheat sheet rows: structure, sources, OS9-not-OS10 syntax, mode order, disrupts flags, documentation addresses, and that Cisco, OS10 and Junos rows and the OS10 Fault Lab are unchanged |
 | `os10native` | Dell OS10 native VLAN: `switchport trunk native vlan` is invalid on OS10, `switchport access vlan` on a trunk sets the untagged VLAN and keeps the trunk, Cheat Sheet rows match, Cisco unchanged, every Extreme incident still solvable on Dell |
 | `uitokens` | Contrast of the shared colours in both themes (4.5:1), the four embedded font files, one UI font and one monospace font, nothing loaded from outside, font-src limited to `data:` |
+| `pcdiag` | Switch Lab PCs as Windows hosts: `ipconfig`, `route print`, `ping` and `tracert` from each PC's own state, a `C:\>` prompt, `traceroute` and switch commands not recognized, read-only addressing, a router with no route answering Destination net unreachable (Cisco), and ping and tracert agreeing for every PC, target and lab, guided and Extreme, with faults added |
 | `progress` | Switch Lab lesson progress and extreme-level progress with two tabs open: both tabs' lessons are kept, the Cisco/Dell choice is not overwritten, damaged or old saved data is handled, rapid saves lose nothing |
 
 `tests/engine/load.mjs` cuts the engine out of `index.html` (it is the part of the Topology Builder's script before the drawing code) and runs it with no browser. The inputs are in `tests/fixtures/`: realistic Cisco, Dell, Palo Alto, ESXi, Linux and Windows output written for the tests. The Windows output follows the layout of the real commands but is not captured from a machine.
@@ -60,6 +61,7 @@ Needs Firefox. If it is not in a standard place, set `FIREFOX=/path/to/firefox`.
 | `branding` | The IK logo is at the top of the hub and every tool, and the banned words appear nowhere |
 | `fault-lab` | Dell is the default, `?` lists commands per mode in alphabetical order, `show interface` output for Cisco and Dell |
 | `fault-lab-free` | Free practice: a working network, no goal, no hints, never touches progress |
+| `fault-lab-windows-pc` | A PC console as a Windows Command Prompt with real key presses: prompt, header, history, focus, tracert, traceroute and switch commands not recognized, switches unchanged |
 | `fault-lab-tabs` | Two real tabs: lessons finished in each are all saved, an open tab updates when the other saves, the Cisco/Dell choice survives, damaged saved progress does not stop the lab |
 | `ping-analyzer` | ping, tracert, traceroute, mtr, WinMTR, pathping, Test-NetConnection, Test-Connection |
 | `calculator-ipv6` | IPv6 address parsing and compression, the subnet calculator, split, EUI-64, the hand-over from the IPv4 tab |
