@@ -35684,7 +35684,8 @@ function ensureSession(id) {
   if (!id) return null;
   if (!consoleSessions[id]) {
     const d = net && net.devices[id], name = d ? d.name : id;
-    consoleSessions[id] = { lines: [{ text: "Connected to " + name + " console (9600 8N1)", cls: "sys" }], history: [], histIdx: -1, confMode: false, confIface: null, confAcl: null };
+    // a switch or router is reached over its serial console; a Windows PC or server opens a Command Prompt
+    consoleSessions[id] = { lines: [{ text: winHost(d) ? "Command Prompt on " + name : "Connected to " + name + " console (9600 8N1)", cls: "sys" }], history: [], histIdx: -1, confMode: false, confIface: null, confAcl: null };
   }
   return consoleSessions[id];
 }

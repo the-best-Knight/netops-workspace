@@ -203,6 +203,7 @@ test('W2-01 a PC or server shows a Windows prompt; switch prompts are unchanged;
   lab(6, 'dell'); on('pc-b'); eq(prompt(), 'C:\\>'); eq(run('ipconfig').split('\n')[0], 'C:\\>ipconfig');
   on('sw1'); ok(/^SW1[>#] ipconfig$/.test(run('ipconfig').split('\n')[0]), 'OS10 keeps its space');
   lab(3); on('srv1'); eq(prompt(), 'C:\\>', 'a server is a Windows host too');
+  lab(6); eq(T.ensureSession('pc-a').lines[0].text, 'Command Prompt on PC-A', 'a PC opens a Command Prompt, not a serial console'); eq(T.ensureSession('sw1').lines[0].text, 'Connected to SW1 console (9600 8N1)', 'a switch keeps its serial console line');
 });
 test('W2-02 the gateway\'s other interface answers at hop 1 with a router TTL: 255 on Cisco, 64 on Dell (F-05)', () => {
   for (const [v, ttl] of [['cisco', 255], ['dell', 64]]) {
