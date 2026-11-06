@@ -26056,6 +26056,9 @@ dialog.nm-dlg {
       return ("0" + Math.round(x + (255 - x) * k).toString(16)).slice(-2);
     }).join("");
   }
+  // an access point, IP phone or end station found by LLDP/CDP keeps that kind in draw.io, with a shape of its own (draw.io has
+  // no copy of the canvas icons); a type picked by hand wins, as on the canvas. Imported devices also carry their kind.
+  var DIO_KIND = { ap: { label: "Access point", shape: "shape=process;size=0.1;" }, phone: { label: "IP phone", shape: "shape=card;size=12;" }, endpoint: { label: "End station", shape: "rounded=1;arcSize=10;" } };
   var DIO_SHAPE = { cloud: "ellipse;shape=cloud;", router: "ellipse;", firewall: "shape=hexagon;perimeter=hexagonPerimeter2;size=0.12;", core: "rounded=1;arcSize=18;", switch: "rounded=1;arcSize=18;", lb: "rhombus;", server: "rounded=0;", host: "rounded=0;", vm: "rounded=1;arcSize=18;dashed=1;", esxi: "rounded=0;", bmc: "rounded=1;arcSize=30;", mgmt: "rounded=1;arcSize=30;", storage: "shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=10;", client: "rounded=1;arcSize=10;", custom: "rounded=0;" };
   function drawioXml() {
     var hid = nmxHiddenMap(), th = THEMES.light, map = {}, cells = [], b = contentBox(), ox = 40 - (b ? b.x : 0), oy = 40 - (b ? b.y : 0), groups = {};
@@ -26100,8 +26103,8 @@ dialog.nm-dlg {
       }
     }), nodes.forEach(function(n) {
       if (n.kind === "device" && !hid[n.id]) {
-        var t = TYPES[n.type] || TYPES.custom, col = CATS[t.cat].light, lk = n.nm ? nmxDeviceLook(n, th) : null, r = rectOf(n), fill = dioHex(lk && lk.fill, dioTint(col, 0.88)), stroke = dioHex(n.ocolor, dioHex(lk && lk.stroke, col)), txt = dioHex(lk && lk.text, "#0b0f14");
-        cells.push(obj("n" + n.id, "<b>" + dioH(n.name) + "</b>" + (n.ip ? "<br>" + dioH(n.ip) : ""), { type: t.label, ip: n.ip, vlan: n.vlan, mac: n.mac, notes: n.notes }, '<mxCell style="' + (DIO_SHAPE[n.type] || DIO_SHAPE.custom) + "whiteSpace=wrap;html=1;fillColor=" + fill + ";strokeColor=" + stroke + ";strokeWidth=2;fontColor=" + txt + ";fontSize=12;" + (lk && lk.stub ? "dashed=1;" : "") + '" vertex="1" parent="1">' + geo(r.x, r.y, r.w, r.h) + "</mxCell>"));
+        var t = TYPES[n.type] || TYPES.custom, col = CATS[t.cat].light, lk = n.nm ? nmxDeviceLook(n, th) : null, r = rectOf(n), fill = dioHex(lk && lk.fill, dioTint(col, 0.88)), stroke = dioHex(n.ocolor, dioHex(lk && lk.stroke, col)), txt = dioHex(lk && lk.text, "#0b0f14"), dv = nmxDevOf(n), kk = dv && DIO_KIND[dv.kind] && n.type === NMX_TYPE[dv.kind] ? DIO_KIND[dv.kind] : null;
+        cells.push(obj("n" + n.id, "<b>" + dioH(n.name) + "</b>" + (n.ip ? "<br>" + dioH(n.ip) : ""), { type: kk ? kk.label : t.label, kind: dv ? dv.kind : "", ip: n.ip, vlan: n.vlan, mac: n.mac, notes: n.notes }, '<mxCell style="' + (kk ? kk.shape : DIO_SHAPE[n.type] || DIO_SHAPE.custom) + "whiteSpace=wrap;html=1;fillColor=" + fill + ";strokeColor=" + stroke + ";strokeWidth=2;fontColor=" + txt + ";fontSize=12;" + (lk && lk.stub ? "dashed=1;" : "") + '" vertex="1" parent="1">' + geo(r.x, r.y, r.w, r.h) + "</mxCell>"));
       }
     }), nodes.forEach(function(n) {
       if (n.kind === "text") {

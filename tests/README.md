@@ -70,6 +70,7 @@ Needs Firefox. If it is not in a standard place, set `FIREFOX=/path/to/firefox`.
 | `topology-drawio` | The `.drawio` export: structure, escaping, shapes, links, no configuration data |
 | `topology-windows-import` | The import dialog lists Windows and Linux, a pasted Windows session builds one server with its team, the switch joins its NICs by MAC, a PC invents no cable |
 | `ui-standard.dark` / `ui-standard.light` | The kit's written UI standard (text of at least 11px, contrast of at least 4.5:1, controls at least 28px) measured on the IPv6 calculator, the analyzer's new cards, and the Fault Lab list and free practice |
+| `topology-export-kinds` | Imported kinds in exports: draw.io keeps access points, IP phones, end stations, switches, ESXi hosts and storage with their own type and shape, mirrors the canvas for unconfirmed links, keeps interface names and confirmed/inferred status; SVG carries the icons; PNG is a real PNG; a JSON project round trip keeps kinds, types, positions, interfaces and link evidence |
 | `topology-auto-arrange` | Dell LLDP with ESXi hosts and Log Sanitizer prompts imported for real, a later import not moving drawn devices, Auto Arrange on a 146-device network (overlaps, end devices near their switch, width, time, repeatable), a pinned device, a saved project loading back, a ring |
 | `topology-*` | The Topology Builder: importing files, links and health, manual edits, VLAN and path views, search, projects and snapshots, encrypted copy, layout, contrast in both themes, the written UX standard |
 
