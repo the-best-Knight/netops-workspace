@@ -26498,6 +26498,12 @@ dialog.nm-dlg {
     }), nmModel.rev++, true) : (nmModel.manual.link[l.nm] = { state: "rejected", at: Date.now() }, nmModel.rev++, true);
   }
   var NMX_RANK = { cloud: 0, firewall: 1, router: 1, lb: 1.5, core: 2, switch: 3, esxi: 4, server: 4, host: 4, storage: 4, bmc: 4, mgmt: 4, custom: 3.5, client: 5, vm: 5 };
+  // An access point, IP phone or end station found by LLDP/CDP keeps the type "custom" so it can show its own icon. For the
+  // layout it is an end device, on the bottom row, not between the switches and the servers. A type picked by hand is used as it is.
+  function nmxRank(n) {
+    var d = n.type === "custom" ? nmxDevOf(n) : null, r = NMX_RANK[n.type];
+    return d && (d.kind === "ap" || d.kind === "phone" || d.kind === "endpoint") && n.type === NMX_TYPE[d.kind] ? 5 : r == null ? 3.5 : r;
+  }
   function nmxGraph(list) {
     var idx = /* @__PURE__ */ Object.create(null), adj = [], v = nmxView();
     return list.forEach(function(n, i) {
@@ -26511,86 +26517,120 @@ dialog.nm-dlg {
       a == null || b == null || a === b || (adj[a].indexOf(b) < 0 && adj[a].push(b), adj[b].indexOf(a) < 0 && adj[b].push(a));
     }), { idx, adj };
   }
-  // End devices that hang off one switch sit in a row directly under it, on the side away from the links that go further down,
-  // so they stay next to their switch and do not sit in the way of the switch-to-switch links.
+  // End devices that hang off one switch sit in a row directly under it. Each switch is given the width its own end devices
+  // need, so they stay under their switch instead of being pushed along the row. When the switch also has links going further
+  // down, its end devices sit to the side of those links when there is room close by; when its links fan out to both sides,
+  // they go in the next row with the devices it links down to, ordered next to it, never in a row where those links pass.
   function nmxLayered(list) {
-    var G = nmxGraph(list), rk = function(n) {
-      var r = NMX_RANK[n.type];
-      return r == null ? 3.5 : r;
-    }, leaf = list.map(function(n, i) {
+    var G = nmxGraph(list), rk = list.map(nmxRank), leaf = list.map(function(n, i) {
       var a2 = G.adj[i];
-      return a2.length === 1 && G.adj[a2[0]].length > 1 && rk(n) >= 3.5 && rk(n) >= rk(list[a2[0]]);
-    }), infra = list.filter(function(n, i) {
-      return !leaf[i];
-    });
-    if (!infra.length || infra.length === list.length) return nmxLayeredCore(list);
-    var base = nmxLayeredCore(infra), at = /* @__PURE__ */ Object.create(null), ys = [], STEP = DEV_H + 76, S = DEV_W + 24;
-    base.forEach(function(o) {
-      at[o.n.id] = o, ys.indexOf(o.y) < 0 && ys.push(o.y);
-    }), ys.sort(function(a2, b2) {
-      return a2 - b2;
-    });
-    var kids = /* @__PURE__ */ Object.create(null), hasLeaves = /* @__PURE__ */ Object.create(null);
+      return a2.length === 1 && G.adj[a2[0]].length > 1 && rk[i] >= 3.5 && rk[i] >= rk[a2[0]];
+    }), notLeaf = function() {
+      return list.filter(function(n, i) {
+        return !leaf[i];
+      });
+    }, infra = notLeaf();
+    if (!infra.length || infra.length === list.length) return nmxLayeredCore(list, null, list.length);
+    var STEP = DEV_H + 84, S = DEV_W + 24, PER = 6, kids = /* @__PURE__ */ Object.create(null), shape = /* @__PURE__ */ Object.create(null), wOf = /* @__PURE__ */ Object.create(null);
     list.forEach(function(n, i) {
       if (leaf[i]) {
         var par = list[G.adj[i][0]];
-        (kids[par.id] = kids[par.id] || []).push(n), hasLeaves[at[par.id].y] = true;
+        (kids[par.id] = kids[par.id] || []).push(i);
       }
+    });
+    // A first pass finds which switches have links going down (to a lower row, or to the next line of a ring or a wrapped row)
+    // and where those links cross the row the end devices would use.
+    var first = nmxLayeredCore(infra, null, list.length), at = /* @__PURE__ */ Object.create(null), side = /* @__PURE__ */ Object.create(null), off = /* @__PURE__ */ Object.create(null);
+    first.forEach(function(o) {
+      at[o.n.id] = o;
+    }), Object.keys(kids).forEach(function(pid) {
+      var po = at[pid], pcx = po.x + po.w / 2, lo = pcx, hi = pcx, any = false;
+      if (G.adj[G.idx[pid]].forEach(function(w) {
+        var q = at[list[w].id];
+        if (q && q.y > po.y) {
+          var x = pcx + (q.x + q.w / 2 - pcx) * STEP / (q.y - po.y + STEP);
+          any = true, lo = Math.min(lo, x), hi = Math.max(hi, x);
+        }
+      }), any) {
+        // when both sides are as free, the end devices go on the outer side of the row, away from links that turn inwards
+        var dR = hi - pcx + 20, dL = pcx - lo + 20, rowX = first.filter(function(o) {
+          return o.y === po.y;
+        }).map(function(o) {
+          return o.x + o.w / 2;
+        }), mid = rowX.reduce(function(a2, b2) {
+          return a2 + b2;
+        }, 0) / rowX.length;
+        Math.min(dR, dL) > DEV_W ? (kids[pid].forEach(function(i) {
+          leaf[i] = false;
+        }), delete kids[pid]) : (side[pid] = Math.abs(dR - dL) < 1 ? pcx < mid ? -1 : 1 : dR < dL ? 1 : -1, off[pid] = Math.min(dR, dL));
+      }
+    }), infra = notLeaf();
+    // more than six end devices on one switch go on several lines of at most six
+    Object.keys(kids).forEach(function(pid) {
+      var ks = kids[pid].map(function(i) {
+        return list[i];
+      }).sort(function(a2, b2) {
+        var x = a2.name.toLowerCase(), y = b2.name.toLowerCase();
+        return x < y ? -1 : x > y ? 1 : a2.id - b2.id;
+      }), lines = Math.ceil(ks.length / PER), per = Math.ceil(ks.length / lines);
+      shape[pid] = { ks, per, lines, w: per * S - (S - DEV_W) }, wOf[pid] = Math.max(DEV_W, side[pid] ? DEV_W / 2 + off[pid] + shape[pid].w : shape[pid].w);
+    });
+    // The wider slots move devices a little, so the side room is checked again against the links where they end up, and the
+    // slots are widened until no link to a lower line crosses the end devices (at most three rounds).
+    var nodeX = function(o) {
+      var sd = side[o.n.id] || 0;
+      return sd > 0 ? o.x : sd < 0 ? o.x + o.w - DEV_W : o.x + (o.w - DEV_W) / 2;
+    };
+    for (var round = 0, base, grow = true; grow && round < 3; round++) {
+      var pos = /* @__PURE__ */ Object.create(null);
+      base = nmxLayeredCore(infra, wOf, list.length), grow = false, base.forEach(function(o) {
+        pos[o.n.id] = o;
+      }), Object.keys(side).forEach(function(pid) {
+        if (!shape[pid]) return;
+        var po = pos[pid], pcx = nodeX(po) + DEV_W / 2, room = 20;
+        G.adj[G.idx[pid]].forEach(function(w) {
+          var q = pos[list[w].id];
+          q && q.y > po.y && (room = Math.max(room, side[pid] * (nodeX(q) + DEV_W / 2 - pcx) * STEP / (q.y - po.y + STEP) + 20));
+        }), room > off[pid] + 1 && (off[pid] = room, wOf[pid] = DEV_W / 2 + room + shape[pid].w, grow = true);
+      });
+    }
+    var ys = [], need = /* @__PURE__ */ Object.create(null);
+    base.forEach(function(o) {
+      ys.indexOf(o.y) < 0 && ys.push(o.y), shape[o.n.id] && (need[o.y] = Math.max(need[o.y] || 0, shape[o.n.id].lines));
+    }), ys.sort(function(a2, b2) {
+      return a2 - b2;
     });
     var extra = /* @__PURE__ */ Object.create(null), add = 0;
     ys.forEach(function(y) {
-      extra[y] = add, hasLeaves[y] && (add += STEP);
+      extra[y] = add, add += (need[y] || 0) * STEP;
     });
-    var out = base.map(function(o) {
-      return { n: o.n, x: o.x, y: o.y + extra[o.y] };
-    }), row = [];
-    Object.keys(kids).forEach(function(pid) {
-      var po = at[pid], cx = po.x + DEV_W / 2, py = po.y + extra[po.y], down = [];
-      G.adj[list.indexOf(po.n)].forEach(function(w) {
-        var q = at[list[w].id];
-        q && q.y > po.y && down.push(q.x + DEV_W / 2);
-      });
-      var side = down.length ? cx <= down.reduce(function(a2, b2) {
-        return a2 + b2;
-      }, 0) / down.length ? -1 : 1 : 0, ks = kids[pid].slice().sort(function(a2, b2) {
-        return a2.name.toLowerCase() < b2.name.toLowerCase() ? -1 : 1;
-      });
-      ks.forEach(function(k, i) {
-        row.push({ n: k, c: side ? cx + side * (DEV_W * 0.8 + i * S) : cx - (ks.length - 1) * S / 2 + i * S, y: py + STEP });
-      });
-    });
-    var byY = /* @__PURE__ */ Object.create(null);
-    row.forEach(function(r) {
-      (byY[r.y] = byY[r.y] || []).push(r);
-    }), Object.keys(byY).forEach(function(y) {
-      var r = byY[y].sort(function(a2, b2) {
-        return a2.c - b2.c;
-      });
-      r.forEach(function(it, i) {
-        i && it.c < r[i - 1].c + S && (it.c = r[i - 1].c + S);
-      });
-      r.forEach(function(it) {
-        out.push({ n: it.n, x: it.c - DEV_W / 2, y: it.y });
-      });
+    var out = [];
+    base.forEach(function(o) {
+      var sh = shape[o.n.id], sd = side[o.n.id] || 0, x = sd > 0 ? o.x : sd < 0 ? o.x + o.w - DEV_W : o.x + (o.w - DEV_W) / 2, y = o.y + extra[o.y];
+      sh && sh.ks.forEach(function(k, i) {
+        var ln = Math.floor(i / sh.per), cnt = Math.min(sh.per, sh.ks.length - ln * sh.per), cx = x + DEV_W / 2;
+        // to the side, the end devices nearest the switch fill first; under it, a short last line is centred
+        out.push({ n: k, x: sd > 0 ? cx + off[o.n.id] + i % sh.per * S : sd < 0 ? cx - off[o.n.id] - sh.w + (i % sh.per + sh.per - cnt) * S : cx - sh.w / 2 + (i % sh.per + (sh.per - cnt) / 2) * S, y: y + (ln + 1) * STEP });
+      }), out.push({ n: o.n, x, y });
     });
     var mn = Math.min.apply(null, out.map(function(o) {
       return o.x;
     }));
-    return mn < 0 && out.forEach(function(o) {
+    return out.forEach(function(o) {
       o.x -= mn;
     }), out;
   }
-  function nmxLayeredCore(list) {
-    var G = nmxGraph(list), n = list.length, rank = list.map(function(x) {
-      var r = NMX_RANK[x.type];
-      return r ?? 3.5;
-    }), deg = G.adj.map(function(a) {
+  // wOf: the width a device needs on its row (its own end devices sit under it), by node id; DEV_W when missing.
+  // total: how many devices the whole drawing has, end devices included; it sets how wide a row may get before it wraps.
+  function nmxLayeredCore(list, wOf, total) {
+    var G = nmxGraph(list), n = list.length, rank = list.map(nmxRank), deg = G.adj.map(function(a) {
       return a.length;
     }), comp = new Array(n).fill(-1), comps = [], i, j;
     // Layout only: when switches of one kind are named core / distribution / access, that order breaks the tie between rows.
-    // It never changes what a device is called or what kind it is.
+    // It never changes what a device is called or what kind it is. A tier word counts only as a whole part of the name.
     var tier = list.map(function(x) {
-      return /(^|[-_. ])(core|cr\d)/i.test(x.name) ? 0 : /(^|[-_. ])(dist|distribution|agg|dsw)/i.test(x.name) ? 1 : /(^|[-_. ])(acc|access|edge|asw)/i.test(x.name) ? 2 : -1;
+      var nm = String(x.name || "");
+      return /(^|[-_. ])(core|cr\d+)(?=$|[-_. \d])/i.test(nm) ? 0 : /(^|[-_. ])(dist|distribution|agg|dsw)(?=$|[-_. \d])/i.test(nm) ? 1 : /(^|[-_. ])(acc|access|edge|asw)(?=$|[-_. \d])/i.test(nm) ? 2 : -1;
     }), seen = {};
     tier.forEach(function(t, k) {
       t >= 0 && rank[k] >= 2 && rank[k] <= 3 && (seen[t] = 1);
@@ -26607,9 +26647,11 @@ dialog.nm-dlg {
       }
       comps.push(c);
     }
-    var out = [], packs = [], isolated = [];
+    var out = [], packs = [], isolated = [], GAP = 56, vid = n, isV = {}, slot = function(u2) {
+      return isV[u2] ? 24 : wOf && wOf[list[u2].id] || DEV_W;
+    };
     comps.sort(function(a, b) {
-      return b.length - a.length;
+      return b.length - a.length || (list[a[0]].name.toLowerCase() < list[b[0]].name.toLowerCase() ? -1 : 1);
     }), comps.forEach(function(c2) {
       if (c2.length === 1 && !deg[c2[0]]) {
         isolated.push(c2[0]);
@@ -26625,13 +26667,14 @@ dialog.nm-dlg {
         dist[w] == null && (dist[w] = dist[q[h]] + 1, q.push(w));
       });
       var key = function(u2) {
-        return [rank[u2], dist[u2] == null ? 99 : dist[u2], -deg[u2], list[u2].name.toLowerCase(), u2];
+        return [rank[u2], dist[u2] == null ? 99 : dist[u2], -deg[u2], list[u2].name.toLowerCase(), list[u2].id];
       }, cmp = function(a, b) {
-        for (var ka = key(a), kb = key(b), t = 0; t < 4; t++) {
+        if (isV[a] || isV[b]) return (isV[a] ? 1 : 0) - (isV[b] ? 1 : 0) || a - b;
+        for (var ka = key(a), kb = key(b), t = 0; t < 5; t++) {
           if (ka[t] < kb[t]) return -1;
           if (ka[t] > kb[t]) return 1;
         }
-        return ka[4] - kb[4];
+        return 0;
       }, order = c2.slice().sort(cmp), pos = {};
       order.forEach(function(u2, k) {
         pos[u2] = k;
@@ -26640,10 +26683,11 @@ dialog.nm-dlg {
       order.forEach(function(u2) {
         layer[u2] = 0;
       });
-      // Switches of the same kind, the same distance from the top and the same number of links are peers: a link between them
-      // keeps them on one row (two distribution switches linked to each other), instead of making one the parent of the other.
+      // Devices of the same kind and the same distance from the top are peers: a link between them keeps them on one row (two
+      // core switches, or two distribution switches, linked to each other), instead of making one the parent of the other. They
+      // need not have the same number of links: one core of a pair often has more access switches than the other.
       var peer = function(u2, w) {
-        return rank[u2] === rank[w] && dist[u2] === dist[w] && deg[u2] === deg[w];
+        return rank[u2] === rank[w] && dist[u2] === dist[w];
       };
       for (var again = 0; again < 4; again++) order.forEach(function(u2) {
         G.adj[u2].forEach(function(w) {
@@ -26658,6 +26702,22 @@ dialog.nm-dlg {
       order.forEach(function(u2) {
         rows[layer[u2]].push(u2);
       });
+      // A link that skips rows gets a narrow stand-in on each row it crosses, so the ordering keeps a gap for it and no device
+      // is placed across its path. Stand-ins take part in the ordering only; nothing is drawn for them.
+      var X = {};
+      c2.forEach(function(u2) {
+        X[u2] = G.adj[u2].slice();
+      }), c2.forEach(function(u2) {
+        G.adj[u2].forEach(function(w) {
+          var d = layer[w] - layer[u2];
+          if (d < 2) return;
+          X[u2].splice(X[u2].indexOf(w), 1), X[w].splice(X[w].indexOf(u2), 1);
+          for (var prev = u2, k = 1; k <= d; k++) {
+            var v = k < d ? vid++ : w;
+            k < d && (X[v] = [], isV[v] = 1, layer[v] = layer[u2] + k, rows[layer[v]].push(v)), X[prev].push(v), X[v].push(prev), prev = v;
+          }
+        });
+      });
       var xpos = {};
       rows.forEach(function(r) {
         r.forEach(function(u2, k) {
@@ -26667,7 +26727,7 @@ dialog.nm-dlg {
       for (var pass = 0; pass < 6; pass++) for (var down = pass % 2 === 0, li = down ? 1 : rows.length - 2; down ? li < rows.length : li >= 0; li += down ? 1 : -1) {
         var ref = down ? li - 1 : li + 1, bc = {};
         rows[li].forEach(function(u2) {
-          var xs = G.adj[u2].filter(function(w) {
+          var xs = X[u2].filter(function(w) {
             return layer[w] === ref;
           }).map(function(w) {
             return xpos[w];
@@ -26681,27 +26741,140 @@ dialog.nm-dlg {
           xpos[u2] = k;
         });
       }
-      var cellW = DEV_W + 56, cellH = DEV_H + 74, maxPerLine = Math.max(8, Math.min(14, Math.ceil(Math.sqrt(c2.length) * 2.2))), y = 0, widest = 0, placed = [];
+      // Two devices on one row that link to each other must not have a device between them, or their link runs through it. A
+      // device with no link along the row is moved out to the side nearer the devices it links to. A stand-in for a link that
+      // skips the row may stay between them: nothing is drawn there.
       rows.forEach(function(r) {
-        for (var lines = Math.ceil(r.length / maxPerLine) || 1, per = Math.ceil(r.length / lines), ln = 0; ln < lines; ln++) {
-          var part = r.slice(ln * per, (ln + 1) * per), w = part.length * cellW;
-          widest = Math.max(widest, w), placed.push({ part, y, w }), y += cellH;
+        var same = function(u2) {
+          return isV[u2] ? [] : G.adj[u2].filter(function(w) {
+            return layer[w] === layer[u2];
+          });
+        };
+        for (var tries = 0, moved = true; moved && tries < r.length; tries++) {
+          moved = false;
+          for (var i2 = 0; i2 < r.length && !moved; i2++) same(r[i2]).forEach(function(w) {
+            var j2 = r.indexOf(w);
+            if (moved || j2 <= i2 + 1) return;
+            var free = r.slice(i2 + 1, j2).filter(function(u2) {
+              return !isV[u2] && !same(u2).length;
+            });
+            if (!free.length) return;
+            var mid = (i2 + j2) / 2, left = [], right = [];
+            free.forEach(function(u2) {
+              var xs = X[u2].map(function(w2) {
+                return xpos[w2];
+              }), avg = xs.length ? xs.reduce(function(a, b) {
+                return a + b;
+              }, 0) / xs.length : mid;
+              (avg < mid ? left : right).push(u2);
+            });
+            var a1 = r[i2], b1 = r[j2], rest = r.filter(function(u2) {
+              return free.indexOf(u2) < 0;
+            }), ia = rest.indexOf(a1), ib = rest.indexOf(b1);
+            rest.splice.apply(rest, [ib + 1, 0].concat(right)), rest.splice.apply(rest, [ia, 0].concat(left));
+            r.splice.apply(r, [0, r.length].concat(rest)), moved = true;
+          });
         }
-        y += 20;
-      });
-      var items = [];
-      placed.forEach(function(p) {
-        p.part.forEach(function(u2, k) {
-          items.push({ n: list[u2], x: (widest - p.w) / 2 + k * cellW, y: p.y });
+        r.forEach(function(u2, k) {
+          xpos[u2] = k;
         });
-      }), packs.push({ items, w: widest, h: y });
+      });
+      // A row that is one ring of four or more devices is drawn as a loop on two lines, so the link that closes the ring
+      // does not run along the row through every device.
+      var ring = function(r) {
+        if (r.length < 4 || r.some(function(u2) {
+          return isV[u2];
+        })) return null;
+        var inRow = {}, nb = {};
+        r.forEach(function(u2) {
+          inRow[u2] = 1;
+        });
+        for (var k = 0; k < r.length; k++) if (nb[r[k]] = G.adj[r[k]].filter(function(w) {
+          return inRow[w];
+        }), nb[r[k]].length !== 2) return null;
+        for (var walk = [r[0]], prev = -1, cur = r[0]; walk.length < r.length; ) {
+          var nx = nb[cur][0] === prev ? nb[cur][1] : nb[cur][0];
+          if (prev < 0 && xpos[nb[cur][1]] < xpos[nx]) nx = nb[cur][1];
+          if (nx === r[0]) return null;
+          prev = cur, cur = nx, walk.push(cur);
+        }
+        if (nb[cur].indexOf(r[0]) < 0) return null;
+        var half = Math.ceil(walk.length / 2);
+        return [walk.slice(0, half), walk.slice(half).reverse()];
+      };
+      // A long row wraps onto several lines, by the width its devices need, so a big network does not become one very wide row.
+      // A line holds at least six devices: a wrapped line puts the links to the next line through the one above it.
+      var budget = Math.max(8, Math.min(14, Math.ceil(Math.sqrt(Math.max(total || 0, c2.length)) * 2.2))) * (DEV_W + GAP), wrap = function(r) {
+        var full = r.reduce(function(a, u2) {
+          return a + slot(u2) + GAP;
+        }, 0), real = r.filter(function(u2) {
+          return !isV[u2];
+        }).length, target = full / Math.max(1, Math.min(Math.ceil(full / budget), Math.ceil(real / 6))), lines = [[]], acc = 0;
+        r.forEach(function(u2) {
+          var s2 = slot(u2) + GAP;
+          acc && acc + s2 > target + GAP / 2 && (lines.push([]), acc = 0), lines[lines.length - 1].push(u2), acc += s2;
+        });
+        return lines;
+      };
+      // Servers, hosts and storage that link only upwards share a row with switches that link further down. When that row has
+      // to wrap, they go on lines of their own above the switches, split to the left and right, so the links from above to the
+      // switches pass down the middle and the switches sit right above the devices they link down to.
+      var hasDown = function(u2) {
+        return G.adj[u2].some(function(w) {
+          return layer[w] > layer[u2];
+        });
+      }, split = function(r) {
+        var term = r.filter(function(u2) {
+          return rank[u2] >= 4 && !hasDown(u2);
+        }), rest = r.filter(function(u2) {
+          return term.indexOf(u2) < 0;
+        });
+        if (!term.length || !rest.length || wrap(r).length < 2) return null;
+        var mid = wrap(rest), gapW = mid[0].reduce(function(a, u2) {
+          return a + slot(u2) + GAP;
+        }, 0);
+        return wrap(term).map(function(part) {
+          return { part, gapAt: Math.ceil(part.length / 2), gapW };
+        }).concat(mid);
+      };
+      var cellH = DEV_H + 74, y = 0, placed = [];
+      rows.forEach(function(r) {
+        (ring(r) || split(r) || wrap(r)).forEach(function(part) {
+          var gapAt = part.gapAt || -1, gapW = part.gapW || 0;
+          placed.push({ part: part.part || part, y, gapAt, gapW }), y += cellH;
+        }), y += 20;
+      });
+      // Each line sits under the devices it links to above it (the average of those links), within the width of the lines
+      // above when it fits and with its middle inside that width when it is wider, so links run as straight down as they can
+      // and a link that skips a row passes through its gap.
+      var cx = {}, items = [], minX = 0, maxX = 0;
+      placed.forEach(function(p, pi) {
+        var x = 0, at0 = {}, sum = 0, cnt = 0;
+        p.part.forEach(function(u2, k) {
+          k === p.gapAt && (x += p.gapW), at0[u2] = x, x += slot(u2) + GAP;
+        });
+        var w = x - GAP;
+        p.part.forEach(function(u2) {
+          X[u2].forEach(function(v) {
+            cx[v] != null && (sum += cx[v] - (at0[u2] + slot(u2) / 2), cnt++);
+          });
+        });
+        var shift = cnt ? sum / cnt : (minX + maxX - w) / 2;
+        pi && (shift = w <= maxX - minX ? Math.max(minX, Math.min(maxX - w, shift)) : Math.max(minX - w / 2, Math.min(maxX - w / 2, shift)));
+        p.part.forEach(function(u2) {
+          var left = at0[u2] + shift;
+          cx[u2] = left + slot(u2) / 2, isV[u2] || items.push({ n: list[u2], x: left, y: p.y, w: slot(u2), L: layer[u2] });
+        }), minX = pi ? Math.min(minX, shift) : shift, maxX = pi ? Math.max(maxX, shift + w) : shift + w;
+      }), items.forEach(function(it) {
+        it.x -= minX;
+      }), packs.push({ items, w: maxX - minX + GAP, h: y });
     });
     var stageAspect = Math.max(0.6, Math.min(3, typeof stage < "u" && stage.clientHeight ? stage.clientWidth / stage.clientHeight : 1.5));
     function packWith(cols2) {
       var res = [], px = 0, py = 0, rowH = 0, W = 0, n2 = 0, wRow = 0;
       packs.forEach(function(p) {
         n2 >= cols2 && (W = Math.max(W, px), px = 0, py += rowH + 120, rowH = 0, n2 = 0), p.items.forEach(function(it) {
-          res.push({ n: it.n, x: px + it.x, y: py + it.y });
+          res.push({ n: it.n, x: px + it.x, y: py + it.y, w: it.w, L: it.L });
         }), px += p.w + 120, rowH = Math.max(rowH, p.h), n2++;
       }), W = Math.max(W, px);
       var Ht = py + rowH;
@@ -26716,11 +26889,13 @@ dialog.nm-dlg {
     }), isolated.length) {
       var bottom = out.reduce(function(m, o) {
         return Math.max(m, o.y);
-      }, -cellHDefault()) + cellHDefault() + 40, per2 = Math.max(6, Math.min(12, Math.ceil(Math.sqrt(isolated.length) * 1.6)));
+      }, -cellHDefault()) + cellHDefault() + 40, rowW = Math.max(6, Math.min(12, Math.ceil(Math.sqrt(isolated.length) * 1.6))) * (DEV_W + 56), ix = 0, iy = bottom;
+      // devices with no links to other switches go in rows at the bottom, each with the width its own end devices need
       isolated.sort(function(a, b) {
         return list[a].name.toLowerCase() < list[b].name.toLowerCase() ? -1 : 1;
-      }), isolated.forEach(function(u2, k) {
-        out.push({ n: list[u2], x: k % per2 * (DEV_W + 56), y: bottom + Math.floor(k / per2) * (DEV_H + 40) });
+      }), isolated.forEach(function(u2) {
+        var sw = slot(u2);
+        ix && ix + sw > rowW && (ix = 0, iy += DEV_H + 40), out.push({ n: list[u2], x: ix, y: iy, w: sw }), ix += sw + 56;
       });
     }
     return out;
@@ -26798,7 +26973,7 @@ dialog.nm-dlg {
     });
     var placed = others.slice(), rest = [];
     if (fresh2.sort(function(a, b) {
-      return (NMX_RANK[a.type] == null ? 3.5 : NMX_RANK[a.type]) - (NMX_RANK[b.type] == null ? 3.5 : NMX_RANK[b.type]);
+      return nmxRank(a) - nmxRank(b);
     }), fresh2.forEach(function(f) {
       var nb = [];
       if (links.forEach(function(l) {
@@ -26814,8 +26989,8 @@ dialog.nm-dlg {
         return s + o.x + DEV_W / 2;
       }, 0) / nb.length, cy = nb.reduce(function(s, o) {
         return s + o.y;
-      }, 0) / nb.length, rf = NMX_RANK[f.type] == null ? 3.5 : NMX_RANK[f.type], rn = nb.reduce(function(s, o) {
-        return s + (NMX_RANK[o.type] == null ? 3.5 : NMX_RANK[o.type]);
+      }, 0) / nb.length, rf = nmxRank(f), rn = nb.reduce(function(s, o) {
+        return s + nmxRank(o);
       }, 0) / nb.length, p = freeSpot({ x: snapV(cx - DEV_W / 2), y: snapV(cy + (rf >= rn ? 1 : -1) * (DEV_H + 74)) }, DEV_W, DEV_H);
       f.x = p.x, f.y = p.y, placed.push(f);
     }), nmxAvoidOverlaps(fresh2.map(function(f) {
