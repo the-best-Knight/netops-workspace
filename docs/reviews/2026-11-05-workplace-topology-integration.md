@@ -281,6 +281,13 @@ Wave 1 protections, checked by name: F-04 (`sanitizer`, 61), F-02 (F-02a to F-02
 
 ## 18. Local commits
 
-COMMITS
+| Commit | What |
+| --- | --- |
+| `7c9291f` | Engine: device kind, prompts, Dell LLDP with ESXi, tests W-01 to W-14 |
+| `fcda126` | Auto Arrange, browser test `topology-auto-arrange`, layout harness and results |
+| `88621bd` | This report, screenshots, CHANGELOG, tests README |
+| (this commit) | Commit list filled in |
+
+The tested `index.html` is byte for byte the one in `fcda126`.
 
 Nothing pushed. No remote branch created. History not rewritten.
